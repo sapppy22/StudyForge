@@ -1,0 +1,40 @@
+{
+  "examType": "CLASS_9",
+  "title": "Class 9 Boards",
+  "subjects": [
+    {
+      "title": "Mathematics",
+      "chapters": [
+        {
+          "title": "Number Systems",
+          "topics": ["Rational and Irrational Numbers", "Real Numbers and Decimal Expansions", "Operations on Real Numbers"]
+        },
+        {
+          "title": "Algebra",
+          "topics": ["Polynomials", "Linear Equations in Two Variables", "Algebraic Identities"]
+        },
+        {
+          "title": "Geometry",
+          "topics": ["Introduction to Euclid's Geometry", "Lines and Angles", "Triangles", "Quadrilaterals", "Circles"]
+        }
+      ]
+    },
+    {
+      "title": "Science",
+      "chapters": [
+        {
+          "title": "Physics",
+          "topics": ["Motion", "Force and Laws of Motion", "Gravitation", "Work and Energy", "Sound"]
+        },
+        {
+          "title": "Chemistry",
+          "topics": ["Matter in Our Surroundings", "Is Matter Around Us Pure", "Atoms and Molecules", "Structure of the Atom"]
+        },
+        {
+          "title": "Biology",
+          "topics": ["The Fundamental Unit of Life", "Tissues", "Diversity in Living Organisms", "Why Do We Fall Ill", "Natural Resources"]
+        }
+      ]
+    }
+  ]
+}

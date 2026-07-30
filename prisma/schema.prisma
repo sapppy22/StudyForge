@@ -1,0 +1,431 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ExamType {
+  CLASS_9
+  CLASS_10
+  JEE_MAIN
+  JEE_ADVANCED
+  NEET
+  UPSC
+  CAT
+  CUSTOM
+}
+
+enum GoalStatus {
+  active
+  archived
+}
+
+enum TopicStatus {
+  not_started
+  learning
+  reviewing
+  mastered
+}
+
+enum ContentType {
+  note
+  video
+  pdf
+  image
+  web_article
+}
+
+enum QuestionType {
+  mcq
+  msq
+  numeric
+  assertion_reason
+  short_answer
+  long_answer
+  derivation
+  proof
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
+enum QuestionSource {
+  llm_generated
+  user_notes_grounded
+  web_sourced_pyq
+  user_created
+}
+
+enum TestType {
+  topic_test
+  revision_session
+  mock_test
+  scheduled_retest
+}
+
+enum TestStatus {
+  scheduled
+  ready
+  in_progress
+  completed
+}
+
+enum AttemptStatus {
+  started
+  submitted
+  graded
+}
+
+enum FlashcardSource {
+  auto_from_notes
+  manual
+}
+
+enum Rating {
+  again
+  hard
+  good
+  easy
+}
+
+enum ChatRole {
+  user
+  assistant
+  system
+}
+
+enum NotificationType {
+  flashcards_due
+  test_due
+  revision_due
+  weekly_report
+  ingestion_complete
+}
+
+model Profile {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  goals               Goal[]
+  contentItems        ContentItem[]
+  questions           Question[]
+  tests               Test[]
+  testAttempts        TestAttempt[]
+  flashcards          Flashcard[]
+  flashcardReviews    FlashcardReview[]
+  proficiencyScores   ProficiencyScore[]
+  chatSessions        ChatSession[]
+  notifications       Notification[]
+
+  @@map("profiles")
+}
+
+model Goal {
+  id                String     @id @default(uuid())
+  userId            String     @map("user_id")
+  title             String
+  examType          ExamType   @map("exam_type")
+  examDate          DateTime?  @map("exam_date")
+  dailyStudyMinutes Int?       @map("daily_study_minutes")
+  status            GoalStatus @default(active)
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  user        Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topics      SyllabusTopic[]
+  questions   Question[]
+  tests       Test[]
+  chatSessions ChatSession[]
+
+  @@index([userId])
+  @@map("goals")
+}
+
+model SyllabusTopic {
+  id          String      @id @default(uuid())
+  goalId      String      @map("goal_id")
+  parentId    String?     @map("parent_id")
+  title       String
+  description String?
+  weight      Float       @default(1)
+  orderIndex  Int         @default(0) @map("order_index")
+  status      TopicStatus @default(not_started)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  goal              Goal               @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  parent            SyllabusTopic?     @relation("TopicTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children          SyllabusTopic[]    @relation("TopicTree")
+  contentItems      ContentItem[]
+  questions         Question[]
+  flashcards        Flashcard[]
+  proficiencyScores ProficiencyScore[]
+  chatSessions      ChatSession[]
+
+  @@index([goalId])
+  @@index([parentId])
+  @@map("syllabus_topics")
+}
+
+model ContentItem {
+  id          String      @id @default(uuid())
+  topicId     String      @map("topic_id")
+  userId      String      @map("user_id")
+  type        ContentType
+  title       String
+  sourceUrl   String?     @map("source_url")
+  rawText     String?     @map("raw_text")
+  chunks      Json?
+  embedding   Unsupported("vector(1536)")?
+  metadata    Json?
+  processedAt DateTime?   @map("processed_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  topic SyllabusTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user  Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+  @@index([userId])
+  @@index([type])
+  @@map("content_items")
+}
+
+model Question {
+  id            String         @id @default(uuid())
+  topicId       String         @map("topic_id")
+  goalId        String         @map("goal_id")
+  userId        String?        @map("user_id")
+  type          QuestionType
+  difficulty    Difficulty
+  content       String
+  options       Json?
+  correctAnswer String?        @map("correct_answer")
+  rubric        Json?
+  explanation   String?
+  source        QuestionSource @default(llm_generated)
+  isGeneric     Boolean        @default(false) @map("is_generic")
+  metadata      Json?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  topic        SyllabusTopic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  goal         Goal           @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  user         Profile?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  testQuestions TestQuestion[]
+  answers      Answer[]
+
+  @@index([topicId])
+  @@index([goalId])
+  @@index([userId])
+  @@index([type])
+  @@index([difficulty])
+  @@map("questions")
+}
+
+model Test {
+  id           String     @id @default(uuid())
+  goalId       String     @map("goal_id")
+  userId       String     @map("user_id")
+  title        String
+  type         TestType
+  status       TestStatus @default(scheduled)
+  scheduledAt  DateTime?  @map("scheduled_at")
+  completedAt  DateTime?  @map("completed_at")
+  settings     Json?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  goal     Goal           @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  user     Profile        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions TestQuestion[]
+  attempts TestAttempt[]
+
+  @@index([goalId])
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("tests")
+}
+
+model TestQuestion {
+  id        String @id @default(uuid())
+  testId    String @map("test_id")
+  questionId String @map("question_id")
+  orderIndex Int    @map("order_index")
+  score     Int?
+
+  test     Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, questionId])
+  @@index([testId])
+  @@index([questionId])
+  @@map("test_questions")
+}
+
+model TestAttempt {
+  id          String        @id @default(uuid())
+  testId      String        @map("test_id")
+  userId      String        @map("user_id")
+  score       Int?
+  maxScore    Int           @default(0) @map("max_score")
+  status      AttemptStatus @default(started)
+  startedAt   DateTime      @default(now()) @map("started_at")
+  submittedAt DateTime?     @map("submitted_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  test    Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  user    Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@index([testId])
+  @@index([userId])
+  @@index([status])
+  @@map("test_attempts")
+}
+
+model Answer {
+  id         String    @id @default(uuid())
+  attemptId  String    @map("attempt_id")
+  questionId String    @map("question_id")
+  response   String
+  isCorrect  Boolean?  @map("is_correct")
+  score      Int?
+  maxScore   Int       @default(0) @map("max_score")
+  feedback   String?
+  gradedAt   DateTime? @map("graded_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  attempt  TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
+  @@map("answers")
+}
+
+model Flashcard {
+  id         String          @id @default(uuid())
+  topicId    String          @map("topic_id")
+  userId     String          @map("user_id")
+  front      String
+  back       String
+  source     FlashcardSource @default(auto_from_notes)
+  metadata   Json?
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  topic    SyllabusTopic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user     Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews  FlashcardReview[]
+
+  @@index([topicId])
+  @@index([userId])
+  @@map("flashcards")
+}
+
+model FlashcardReview {
+  id         String   @id @default(uuid())
+  flashcardId String  @map("flashcard_id")
+  userId     String   @map("user_id")
+  rating     Rating
+  stability  Float
+  difficulty Float
+  dueDate    DateTime @map("due_date")
+  reviewedAt DateTime @default(now()) @map("reviewed_at")
+
+  flashcard Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+  user      Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([flashcardId])
+  @@index([userId])
+  @@index([dueDate])
+  @@map("flashcard_reviews")
+}
+
+model ProficiencyScore {
+  id             String   @id @default(uuid())
+  topicId        String   @map("topic_id")
+  userId         String   @map("user_id")
+  score          Float
+  decayRate      Float    @default(0.05) @map("decay_rate")
+  lastComputedAt DateTime @default(now()) @map("last_computed_at")
+
+  topic SyllabusTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user  Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, userId])
+  @@index([topicId])
+  @@index([userId])
+  @@index([score])
+  @@map("proficiency_scores")
+}
+
+model ChatSession {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  goalId    String?  @map("goal_id")
+  topicId   String?  @map("topic_id")
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal     Goal?         @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  topic    SyllabusTopic? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  messages ChatMessage[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([topicId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  sessionId String   @map("session_id")
+  role      ChatRole
+  content   String
+  sources   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String
+  body      String
+  dueAt     DateTime?        @map("due_at")
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([dueAt])
+  @@map("notifications")
+}

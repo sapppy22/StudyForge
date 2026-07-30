@@ -1,0 +1,53 @@
+{
+  "examType": "JEE_MAIN",
+  "title": "JEE Main 2027",
+  "subjects": [
+    {
+      "title": "Physics",
+      "chapters": [
+        {
+          "title": "Mechanics",
+          "topics": ["Units and Measurements", "Motion in a Straight Line", "Motion in a Plane", "Laws of Motion", "Work, Energy and Power", "System of Particles and Rotational Motion", "Gravitation"]
+        },
+        {
+          "title": "Thermodynamics and Waves",
+          "topics": ["Mechanical Properties of Solids", "Mechanical Properties of Fluids", "Thermal Properties of Matter", "Thermodynamics", "Kinetic Theory", "Oscillations", "Waves"]
+        },
+        {
+          "title": "Electromagnetism",
+          "topics": ["Electric Charges and Fields", "Electrostatic Potential and Capacitance", "Current Electricity", "Moving Charges and Magnetism", "Magnetism and Matter", "Electromagnetic Induction", "Alternating Current", "Electromagnetic Waves"]
+        }
+      ]
+    },
+    {
+      "title": "Chemistry",
+      "chapters": [
+        {
+          "title": "Physical Chemistry",
+          "topics": ["Some Basic Concepts of Chemistry", "Structure of Atom", "Classification of Elements and Periodicity", "Chemical Bonding and Molecular Structure", "States of Matter", "Thermodynamics", "Equilibrium", "Redox Reactions"]
+        },
+        {
+          "title": "Organic Chemistry",
+          "topics": ["Organic Chemistry - Some Basic Principles and Techniques", "Hydrocarbons", "Environmental Chemistry"]
+        },
+        {
+          "title": "Inorganic Chemistry",
+          "topics": ["The s-Block Elements", "The p-Block Elements", "Hydrogen"]
+        }
+      ]
+    },
+    {
+      "title": "Mathematics",
+      "chapters": [
+        {
+          "title": "Algebra and Sets",
+          "topics": ["Sets", "Relations and Functions", "Trigonometric Functions", "Complex Numbers and Quadratic Equations", "Linear Inequalities", "Permutations and Combinations", "Binomial Theorem", "Sequences and Series"]
+        },
+        {
+          "title": "Coordinate Geometry and Calculus",
+          "topics": ["Straight Lines", "Conic Sections", "Introduction to Three Dimensional Geometry", "Limits and Derivatives", "Statistics", "Probability"]
+        }
+      ]
+    }
+  ]
+}
