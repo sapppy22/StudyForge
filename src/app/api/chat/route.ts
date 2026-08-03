@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createChatSession, getChatSessions, postChatMessage } from "@/services/chat/chatService";
+import { getApiUser } from "@/lib/session";
+import {
+  createChatSession,
+  getChatSessions,
+  postChatMessage,
+} from "@/services/chat/chatService";
 
 export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sessions = await getChatSessions(user.id);
@@ -12,15 +15,26 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
 
   if (body.action === "create") {
-    const session = await createChatSession(user.id, body.title, body.goalId, body.topicId);
+    const session = await createChatSession(
+      user.id,
+      body.title,
+      body.goalId,
+      body.topicId
+    );
     return NextResponse.json(session);
+  }
+
+  if (!body.sessionId || !body.content) {
+    return NextResponse.json(
+      { error: "sessionId and content are required" },
+      { status: 400 }
+    );
   }
 
   const message = await postChatMessage(body.sessionId, user.id, body.content);
