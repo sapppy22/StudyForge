@@ -1,20 +1,23 @@
-"use server";
-
 import { prisma } from "@/db/prisma";
 import { AttemptStatus, QuestionType, TestStatus } from "@prisma/client";
+import { gradeSubjective } from "@/services/ai/grading";
+import { recomputeTopicProficiency } from "@/services/analytics/proficiencyService";
 
 export interface AnswerInput {
   questionId: string;
   response: string;
 }
 
+const MAX_PER_QUESTION = 10;
+const OBJECTIVE_TYPES: QuestionType[] = [
+  QuestionType.mcq,
+  QuestionType.msq,
+  QuestionType.numeric,
+];
+
 export async function startTestAttempt(testId: string, userId: string) {
   return prisma.testAttempt.create({
-    data: {
-      testId,
-      userId,
-      status: AttemptStatus.started,
-    },
+    data: { testId, userId, status: AttemptStatus.started },
   });
 }
 
@@ -25,9 +28,7 @@ export async function submitTestAnswers(
 ) {
   const test = await prisma.test.findFirst({
     where: { id: testId, userId },
-    include: {
-      questions: { include: { question: true } },
-    },
+    include: { questions: { include: { question: true } } },
   });
   if (!test) throw new Error("Test not found");
 
@@ -42,42 +43,50 @@ export async function submitTestAnswers(
 
   let totalScore = 0;
   let maxScore = 0;
+  const topicIds = new Set<string>();
 
-  for (const a of answers) {
-    const tq = test.questions.find((q) => q.questionId === a.questionId);
-    if (!tq) continue;
-
+  for (const tq of test.questions) {
     const question = tq.question;
+    topicIds.add(question.topicId);
+
+    const provided = answers.find((a) => a.questionId === question.id);
+    const response = provided?.response?.trim() ?? "";
+
     let isCorrect: boolean | null = null;
     let score = 0;
     let feedback = "";
-    const max = 10;
 
-    if (
-      question.type === QuestionType.mcq ||
-      question.type === QuestionType.msq ||
-      question.type === QuestionType.numeric
-    ) {
-      isCorrect = a.response.trim().toLowerCase() === question.correctAnswer?.toLowerCase();
-      score = isCorrect ? max : 0;
+    if (OBJECTIVE_TYPES.includes(question.type)) {
+      const expected = (question.correctAnswer ?? "").trim().toLowerCase();
+      isCorrect = response.length > 0 && response.toLowerCase() === expected;
+      score = isCorrect ? MAX_PER_QUESTION : 0;
+      feedback = isCorrect
+        ? "Correct."
+        : `Incorrect. The correct answer is ${question.correctAnswer ?? "—"}.`;
     } else {
-      // Subjective: placeholder grading; real implementation calls LLM
-      score = Math.floor(max * 0.7);
-      feedback = "This is an automated placeholder grade. Real rubric-based grading will run via Claude.";
-      isCorrect = null;
+      const graded = await gradeSubjective({
+        question: question.content,
+        rubric: question.rubric as { criteria: string[] } | null,
+        modelAnswer: question.explanation,
+        response,
+        maxScore: MAX_PER_QUESTION,
+      });
+      score = graded.score;
+      isCorrect = graded.isCorrect;
+      feedback = graded.feedback;
     }
 
     totalScore += score;
-    maxScore += max;
+    maxScore += MAX_PER_QUESTION;
 
     await prisma.answer.create({
       data: {
         attemptId: attempt.id,
         questionId: question.id,
-        response: a.response,
+        response,
         isCorrect,
         score,
-        maxScore: max,
+        maxScore: MAX_PER_QUESTION,
         feedback,
         gradedAt: new Date(),
       },
@@ -86,17 +95,20 @@ export async function submitTestAnswers(
 
   await prisma.testAttempt.update({
     where: { id: attempt.id },
-    data: {
-      score: totalScore,
-      maxScore,
-      status: AttemptStatus.graded,
-    },
+    data: { score: totalScore, maxScore, status: AttemptStatus.graded },
   });
 
   await prisma.test.update({
     where: { id: testId },
     data: { status: TestStatus.completed, completedAt: new Date() },
   });
+
+  // Recompute proficiency for every topic covered by this test.
+  await Promise.all(
+    Array.from(topicIds).map((topicId) =>
+      recomputeTopicProficiency(userId, topicId)
+    )
+  );
 
   return { attemptId: attempt.id, score: totalScore, maxScore };
 }
@@ -113,7 +125,7 @@ export async function getAttemptResults(attemptId: string, userId: string) {
 
 export async function getTestHistory(userId: string) {
   return prisma.testAttempt.findMany({
-    where: { userId },
+    where: { userId, status: AttemptStatus.graded },
     include: { test: true },
     orderBy: { createdAt: "desc" },
   });

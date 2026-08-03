@@ -1,8 +1,8 @@
-"use server";
-
 import { prisma } from "@/db/prisma";
-import { Rating as DbRating } from "@prisma/client";
-import { createEmptyCard, fsrs, Grade } from "ts-fsrs";
+import { Prisma, Rating as DbRating, FlashcardSource } from "@prisma/client";
+import { createEmptyCard, fsrs, type Card, type Grade } from "ts-fsrs";
+import { retrieveNotes } from "@/services/ai/retrieval";
+import { generateFlashcards } from "@/services/ai/flashcards";
 
 const f = fsrs();
 
@@ -13,27 +13,55 @@ const ratingToGrade: Record<DbRating, Grade> = {
   easy: 4,
 };
 
+// ts-fsrs Cards carry Date fields; the Prisma Json column needs plain values.
+function serializeCard(card: Card): Prisma.InputJsonValue {
+  const out: Record<string, unknown> = {
+    ...card,
+    due: card.due.toISOString(),
+  };
+  if (card.last_review) out.last_review = card.last_review.toISOString();
+  else delete out.last_review;
+  return out as Prisma.InputJsonValue;
+}
+
+function deserializeCard(json: unknown): Card {
+  const c = json as Record<string, unknown>;
+  return {
+    ...(c as unknown as Card),
+    due: new Date(c.due as string),
+    last_review: c.last_review ? new Date(c.last_review as string) : undefined,
+  } as Card;
+}
+
 export async function createFlashcard(
   topicId: string,
   userId: string,
   front: string,
-  back: string
+  back: string,
+  source: FlashcardSource = FlashcardSource.manual
 ) {
+  const card = createEmptyCard(new Date()); // due = now → immediately reviewable
   return prisma.flashcard.create({
     data: {
       topicId,
       userId,
       front,
       back,
+      source,
+      due: card.due,
+      fsrsState: serializeCard(card),
+      reps: card.reps,
+      lapses: card.lapses,
     },
   });
 }
 
+/** Cards whose scheduled `due` time has passed (includes brand-new cards). */
 export async function getDueFlashcards(userId: string, limit = 50) {
-  return prisma.flashcardReview.findMany({
-    where: { userId, dueDate: { lte: new Date() } },
-    orderBy: { dueDate: "asc" },
-    include: { flashcard: { include: { topic: true } } },
+  return prisma.flashcard.findMany({
+    where: { userId, due: { lte: new Date() } },
+    orderBy: { due: "asc" },
+    include: { topic: { select: { id: true, title: true } } },
     take: limit,
   });
 }
@@ -46,64 +74,98 @@ export async function getFlashcardsByTopic(topicId: string, userId: string) {
   });
 }
 
+/**
+ * Applies an FSRS review. Correctly carries the previous card state forward
+ * (stability/difficulty/state/reps) instead of starting from an empty card,
+ * so scheduling actually progresses. Also records a review-history row.
+ */
 export async function reviewFlashcard(
   flashcardId: string,
   userId: string,
   rating: DbRating
 ) {
-  const lastReview = await prisma.flashcardReview.findFirst({
-    where: { flashcardId, userId },
-    orderBy: { reviewedAt: "desc" },
+  const flashcard = await prisma.flashcard.findFirst({
+    where: { id: flashcardId, userId },
   });
+  if (!flashcard) throw new Error("Flashcard not found");
 
-  const card = createEmptyCard(lastReview?.reviewedAt ?? new Date());
-  const record = f.next(card, new Date(), ratingToGrade[rating]);
+  const now = new Date();
+  const previous: Card = flashcard.fsrsState
+    ? deserializeCard(flashcard.fsrsState)
+    : createEmptyCard(flashcard.createdAt);
+
+  const { card: next } = f.next(previous, now, ratingToGrade[rating]);
+
+  await prisma.flashcard.update({
+    where: { id: flashcardId },
+    data: {
+      due: next.due,
+      fsrsState: serializeCard(next),
+      reps: next.reps,
+      lapses: next.lapses,
+      lastReview: now,
+    },
+  });
 
   return prisma.flashcardReview.create({
     data: {
       flashcardId,
       userId,
       rating,
-      stability: record.card.stability,
-      difficulty: record.card.difficulty,
-      dueDate: record.card.due,
+      stability: next.stability,
+      difficulty: next.difficulty,
+      dueDate: next.due,
+      reviewedAt: now,
     },
   });
 }
 
+/** Generate flashcards for a topic from the user's notes (AI or fallback). */
+export async function generateFlashcardsForTopic(
+  topicId: string,
+  userId: string,
+  count = 6
+) {
+  const topic = await prisma.syllabusTopic.findFirst({
+    where: { id: topicId, goal: { userId } },
+  });
+  if (!topic) throw new Error("Topic not found");
+
+  const notes = await retrieveNotes(topicId, userId, undefined, 5);
+  const cards = await generateFlashcards({
+    topicTitle: topic.title,
+    notes,
+    count,
+  });
+
+  const created = [];
+  for (const c of cards) {
+    created.push(
+      await createFlashcard(
+        topicId,
+        userId,
+        c.front,
+        c.back,
+        FlashcardSource.auto_from_notes
+      )
+    );
+  }
+  return created;
+}
+
+/** Ensures a topic has at least a few starter cards (used lazily, offline-fast). */
 export async function seedFlashcardsForTopic(topicId: string, userId: string) {
   const existing = await prisma.flashcard.count({ where: { topicId, userId } });
   if (existing > 0) return;
+  await generateFlashcardsForTopic(topicId, userId, 4);
+}
 
-  const topic = await prisma.syllabusTopic.findUnique({ where: { id: topicId } });
-  if (!topic) return;
-
-  await prisma.flashcard.createMany({
-    data: [
-      {
-        topicId,
-        userId,
-        front: `What is the core concept of ${topic.title}?`,
-        back: `A concise definition of ${topic.title}.`,
-      },
-      {
-        topicId,
-        userId,
-        front: `Name one key formula related to ${topic.title}.`,
-        back: `Key formula placeholder for ${topic.title}.`,
-      },
-    ],
-  });
-
-  const cards = await prisma.flashcard.findMany({ where: { topicId, userId } });
-  await prisma.flashcardReview.createMany({
-    data: cards.map((card) => ({
-      flashcardId: card.id,
-      userId,
-      rating: DbRating.good,
-      stability: 0,
-      difficulty: 0,
-      dueDate: new Date(),
-    })),
-  });
+/** Aggregate review stats for a user (for analytics). */
+export async function getFlashcardStats(userId: string) {
+  const [total, due, reviews] = await Promise.all([
+    prisma.flashcard.count({ where: { userId } }),
+    prisma.flashcard.count({ where: { userId, due: { lte: new Date() } } }),
+    prisma.flashcardReview.count({ where: { userId } }),
+  ]);
+  return { total, due, reviews };
 }

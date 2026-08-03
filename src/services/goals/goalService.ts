@@ -1,5 +1,3 @@
-"use server";
-
 import { prisma } from "@/db/prisma";
 import { ExamType, TopicStatus } from "@prisma/client";
 import { getTemplate } from "@/lib/templates";

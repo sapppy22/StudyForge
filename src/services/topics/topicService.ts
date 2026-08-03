@@ -1,5 +1,3 @@
-"use server";
-
 import { prisma } from "@/db/prisma";
 import { TopicStatus } from "@prisma/client";
 

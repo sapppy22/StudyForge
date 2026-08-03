@@ -2,48 +2,50 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { ensureProfile } from "@/lib/session";
+import { APP_URL } from "@/lib/env";
 
 export async function signInWithEmail(formData: FormData) {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
+  const email = String(formData.get("email") ?? "");
+  const password = String(formData.get("password") ?? "");
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
 
-  if (error) {
-    return { error: error.message };
-  }
+  if (error) return { error: error.message };
+  // Guarantee the Prisma profile row exists (covers users created before this flow).
+  if (data.user) await ensureProfile(data.user);
 
   redirect("/dashboard");
 }
 
 export async function signUpWithEmail(formData: FormData) {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const name = formData.get("name") as string;
+  const email = String(formData.get("email") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const name = String(formData.get("name") ?? "");
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: {
-      data: { name },
-    },
+    options: { data: { name } },
   });
 
-  if (error) {
-    return { error: error.message };
-  }
+  if (error) return { error: error.message };
 
-  if (data.user) {
-    await supabase.from("profiles").insert({
-      id: data.user.id,
-      email: data.user.email,
-      name,
-    });
+  // Create the profile row via Prisma (the previous raw `supabase.from` insert
+  // omitted the NOT NULL `updatedAt` column and would fail).
+  if (data.user) await ensureProfile(data.user);
+
+  // When email confirmation is required there is no session yet — tell the user.
+  if (!data.session) {
+    return {
+      message:
+        "Check your inbox to confirm your email, then sign in to continue.",
+    };
   }
 
   redirect("/dashboard");
@@ -53,28 +55,15 @@ export async function signInWithOAuth(provider: "google" | "github") {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback`,
-    },
+    options: { redirectTo: `${APP_URL}/api/auth/callback` },
   });
 
-  if (error) {
-    return { error: error.message };
-  }
-
-  redirect(data.url);
+  if (error) return { error: error.message };
+  if (data.url) redirect(data.url);
 }
 
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
-}
-
-export async function getSessionUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
 }
