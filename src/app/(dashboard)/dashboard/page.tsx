@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -9,9 +9,24 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { getSessionUser } from "@/services/auth/auth";
+import { StatCard } from "@/components/shared/stat-card";
+import { EmptyState } from "@/components/shared/empty-state";
+import { AdaptiveTestButton } from "@/components/tests/adaptive-test-button";
+import { requireUser } from "@/lib/session";
 import { getGoalsByUser } from "@/services/goals/goalService";
-import { BrainCircuit, Calendar, Layers, Target, TrendingDown } from "lucide-react";
+import { getFlashcardStats } from "@/services/flashcards/flashcardService";
+import { getWeakestTopics } from "@/services/analytics/proficiencyService";
+import { collectProficiencyScores, proficiencyDot } from "@/lib/topic-utils";
+import {
+  BrainCircuit,
+  CalendarDays,
+  Layers,
+  TrendingDown,
+  Gauge,
+  ChevronRight,
+  MessageSquare,
+  BookOpen,
+} from "lucide-react";
 
 function daysTo(date: Date | null) {
   if (!date) return null;
@@ -19,128 +34,216 @@ function daysTo(date: Date | null) {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
-function averageProficiency(topics: any[]) {
-  if (!topics.length) return 0;
-  const scores = topics.flatMap((t) => t.proficiencyScores?.map((p: any) => p.score) ?? []);
-  if (!scores.length) return 0;
-  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-}
-
 export default async function DashboardPage() {
-  const user = await getSessionUser();
-  if (!user) redirect("/login");
-
+  const user = await requireUser();
   const goals = await getGoalsByUser(user.id);
   const activeGoal = goals[0];
 
   if (!activeGoal) {
     return (
-      <div className="flex h-[calc(100vh-8rem)] flex-col items-center justify-center text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F7F7F5]">
-          <BrainCircuit className="h-8 w-8" />
-        </div>
-        <h1 className="text-2xl font-semibold">No goals yet</h1>
-        <p className="mt-2 max-w-sm text-muted-foreground">
-          Create your first exam goal to generate a syllabus tree and start tracking proficiency.
-        </p>
-        <Link className={buttonVariants({ className: "mt-6" })} href="/goals/new">
-          Create goal
+      <EmptyState
+        icon={BrainCircuit}
+        title="No goals yet"
+        description="Create your first exam goal to generate a syllabus tree and start tracking proficiency."
+        className="h-[60vh]"
+      >
+        <Link className={cn(buttonVariants())} href="/goals/new">
+          Create your first goal
         </Link>
-      </div>
+      </EmptyState>
     );
   }
 
-  const progress = averageProficiency(activeGoal.topics);
+  const [flashcards, weakest] = await Promise.all([
+    getFlashcardStats(user.id),
+    getWeakestTopics(user.id, activeGoal.id, 1),
+  ]);
+
+  const scores = collectProficiencyScores(activeGoal.topics);
+  const progress = scores.length
+    ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+    : 0;
   const days = daysTo(activeGoal.examDate);
+  const weakestTopic = weakest[0];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{activeGoal.title}</h1>
-          <p className="text-sm text-muted-foreground">Overall preparation progress</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {activeGoal.title}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Your overall preparation at a glance.
+          </p>
         </div>
-        <Link className={buttonVariants({ variant: "outline" })} href="/goals/new">
-          Switch goal
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <AdaptiveTestButton goalId={activeGoal.id} size="sm" />
+          <Link
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            href="/goals/new"
+          >
+            New goal
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription>Overall progress</CardDescription>
-            <CardTitle className="text-3xl">{progress}%</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <StatCard
+          label="Overall progress"
+          value={`${progress}%`}
+          icon={Gauge}
+          hint={`${scores.length} topic${scores.length === 1 ? "" : "s"} assessed`}
+        />
+        <StatCard
+          label="Days to exam"
+          value={days ?? "—"}
+          icon={CalendarDays}
+          hint={
+            activeGoal.examDate
+              ? new Date(activeGoal.examDate).toLocaleDateString()
+              : "No date set"
+          }
+        />
+        <StatCard
+          label="Flashcards due"
+          value={flashcards.due}
+          icon={Layers}
+          hint={`${flashcards.total} card${flashcards.total === 1 ? "" : "s"} total`}
+        />
+        <StatCard
+          label="Weakest topic"
+          value={
+            weakestTopic ? (
+              <span className="line-clamp-1 text-base font-medium">
+                {weakestTopic.topic.title}
+              </span>
+            ) : (
+              "—"
+            )
+          }
+          icon={TrendingDown}
+          hint={
+            weakestTopic
+              ? `${Math.round(weakestTopic.score)}% proficiency`
+              : "Take a test to see"
+          }
+        />
+      </div>
+
+      {progress > 0 && (
+        <Card>
+          <CardContent className="flex flex-col gap-2 py-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium">Overall proficiency</span>
+              <span className="tabular-nums text-muted-foreground">
+                {progress}%
+              </span>
+            </div>
             <Progress value={progress} className="h-2" />
           </CardContent>
         </Card>
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription>Days to exam</CardDescription>
-            <CardTitle className="text-3xl">{days ?? "—"}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardContent>
-        </Card>
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription>Due today</CardDescription>
-            <CardTitle className="text-3xl">0</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Layers className="h-4 w-4 text-muted-foreground" />
-          </CardContent>
-        </Card>
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription>Weakest topic</CardDescription>
-            <CardTitle className="text-base font-medium">Thermodynamics</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TrendingDown className="h-4 w-4 text-red-500" />
-          </CardContent>
-        </Card>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Link
+          href="/flashcards"
+          className="group flex items-center justify-between rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition-shadow hover:shadow-md"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Layers className="size-4.5" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Review flashcards</p>
+              <p className="text-xs text-muted-foreground">
+                {flashcards.due} due now
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
+        <Link
+          href="/subjects"
+          className="group flex items-center justify-between rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition-shadow hover:shadow-md"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <BookOpen className="size-4.5" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Browse subjects</p>
+              <p className="text-xs text-muted-foreground">Add notes & study</p>
+            </div>
+          </div>
+          <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
+        <Link
+          href="/chat"
+          className="group flex items-center justify-between rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition-shadow hover:shadow-md"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <MessageSquare className="size-4.5" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Ask the tutor</p>
+              <p className="text-xs text-muted-foreground">Doubt-solving chat</p>
+            </div>
+          </div>
+          <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
       </div>
 
-      <Card className="border-none shadow-sm">
+      <Card>
         <CardHeader>
           <CardTitle>Syllabus</CardTitle>
-          <CardDescription>Your topic tree, pre-loaded at 0% proficiency.</CardDescription>
+          <CardDescription>
+            Your topic tree. Coloured dots show proficiency — open a topic to add
+            notes, generate flashcards and practice.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {activeGoal.topics.map((subject) => (
-              <div key={subject.id}>
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">{subject.title}</h3>
-                  <span className="text-xs text-muted-foreground">
-                    {subject.children.length} chapters
-                  </span>
-                </div>
-                <div className="mt-2 space-y-2 pl-4">
-                  {subject.children.map((chapter: any) => (
-                    <div key={chapter.id}>
-                      <p className="text-sm text-muted-foreground">{chapter.title}</p>
-                      <div className="mt-1 flex flex-wrap gap-2 pl-4">
-                        {chapter.children.map((topic: any) => (
+        <CardContent className="space-y-5">
+          {activeGoal.topics.map((subject) => (
+            <div key={subject.id}>
+              <div className="flex items-center justify-between">
+                <h3 className="font-medium">{subject.title}</h3>
+                <span className="text-xs text-muted-foreground">
+                  {subject.children.length} chapter
+                  {subject.children.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="mt-2 space-y-2.5 border-l pl-4">
+                {subject.children.map((chapter: any) => (
+                  <div key={chapter.id}>
+                    <p className="text-sm text-muted-foreground">
+                      {chapter.title}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {chapter.children.map((topic: any) => {
+                        const score = topic.proficiencyScores?.[0]?.score ?? 0;
+                        return (
                           <Link
                             key={topic.id}
                             href={`/topics/${topic.id}`}
-                            className="inline-flex items-center gap-1.5 rounded-md border bg-white px-2.5 py-1 text-xs hover:bg-[#F7F7F5]"
+                            className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-xs transition-colors hover:bg-muted"
                           >
-                            <Target className="h-3 w-3" />
+                            <span
+                              className={cn(
+                                "size-1.5 rounded-full",
+                                proficiencyDot(score)
+                              )}
+                            />
                             {topic.title}
                           </Link>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
     </div>
