@@ -1,17 +1,27 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers/providers";
 
 const inter = Inter({
-  variable: "--font-inter",
+  variable: "--font-sans",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const mono = JetBrains_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "StudyForge — Adaptive Exam Prep",
+  title: {
+    default: "StudyForge — Adaptive Exam Prep",
+    template: "%s · StudyForge",
+  },
   description:
-    "A spaced-repetition and adaptive-testing engine that turns your notes into practice questions and a personalized study plan.",
+    "A spaced-repetition and adaptive-testing engine that turns your notes into practice questions, flashcards and a personalized study plan.",
 };
 
 export default function RootLayout({
@@ -20,8 +30,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-[#F7F7F5] text-[#37352F]">
+    <html
+      lang="en"
+      suppressHydrationWarning
+      data-scroll-behavior="smooth"
+      className={`${inter.variable} ${mono.variable} h-full antialiased`}
+    >
+      <body className="min-h-full bg-background text-foreground">
         <Providers>{children}</Providers>
       </body>
     </html>

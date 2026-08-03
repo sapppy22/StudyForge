@@ -3,9 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { signOut } from "@/services/auth/auth";
 import {
   LayoutDashboard,
@@ -25,7 +23,7 @@ const nav = [
   { href: "/flashcards", label: "Flashcards", icon: Layers },
   { href: "/tests", label: "Tests", icon: GraduationCap },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/chat", label: "Chatbot", icon: MessageSquare },
+  { href: "/chat", label: "Tutor", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -33,46 +31,48 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#E9E9E7] bg-white md:flex">
-      <div className="flex h-14 items-center px-4">
+    <aside className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="flex h-14 items-center gap-2 px-4">
         <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
-          <BrainCircuit className="h-5 w-5" />
-          <span>StudyForge</span>
+          <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <BrainCircuit className="size-4" />
+          </span>
+          <span className="tracking-tight">StudyForge</span>
         </Link>
       </div>
-      <Separator />
-      <ScrollArea className="flex-1 py-2">
-        <nav className="flex flex-col gap-1 px-2">
+
+      <ScrollArea className="flex-1 px-2 py-2">
+        <nav className="flex flex-col gap-0.5">
           {nav.map((item) => {
-            const active = pathname.startsWith(item.href);
+            const active =
+              pathname === item.href || pathname.startsWith(item.href + "/");
             const Icon = item.icon;
             return (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant="ghost"
-                  className={cn(
-                    "w-full justify-start gap-2 text-sm",
-                    active && "bg-[#F7F7F5] font-medium"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Button>
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  active &&
+                    "bg-sidebar-accent text-sidebar-accent-foreground"
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                {item.label}
               </Link>
             );
           })}
         </nav>
       </ScrollArea>
-      <Separator />
-      <div className="p-2">
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-2 text-sm text-muted-foreground"
+
+      <div className="border-t border-sidebar-border p-2">
+        <button
           onClick={() => signOut()}
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="size-4" />
           Sign out
-        </Button>
+        </button>
       </div>
     </aside>
   );

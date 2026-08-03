@@ -11,10 +11,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="system"
+        enableSystem
+        disableTransitionOnChange
+      >
         <TooltipProvider delay={100}>
           {children}
-          <Toaster position="bottom-right" />
+          <Toaster position="bottom-right" richColors closeButton />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
