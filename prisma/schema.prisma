@@ -329,6 +329,14 @@ model Flashcard {
   back       String
   source     FlashcardSource @default(auto_from_notes)
   metadata   Json?
+  // FSRS scheduling state lives on the card (source of truth for "due").
+  // fsrsState holds the full serialized ts-fsrs Card; `due` is denormalized
+  // for indexed querying of the review queue.
+  due        DateTime        @default(now())
+  fsrsState  Json?           @map("fsrs_state")
+  reps       Int             @default(0)
+  lapses     Int             @default(0)
+  lastReview DateTime?       @map("last_review")
   createdAt  DateTime        @default(now()) @map("created_at")
   updatedAt  DateTime        @updatedAt @map("updated_at")
 
@@ -338,6 +346,7 @@ model Flashcard {
 
   @@index([topicId])
   @@index([userId])
+  @@index([userId, due])
   @@map("flashcards")
 }
 
