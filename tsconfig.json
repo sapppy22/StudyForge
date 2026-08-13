@@ -30,5 +30,8 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // `workers/` is the Cloudflare pinger — a separate runtime with its own
+  // tsconfig and @cloudflare/workers-types. Typechecking it here would pull
+  // Worker globals into the Next.js app's type space.
+  "exclude": ["node_modules", "workers"]
 }

@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "studyforge-pinger",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  // Render's free instance sleeps after ~15 minutes without traffic, and a
+  // cold start costs the next visitor ~30-60s. Every 10 minutes keeps it warm
+  // with margin, at 144 requests/day — comfortably inside the Workers free
+  // tier's 100k/day.
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+
+  "vars": {
+    // Override per environment, or with `wrangler deploy --var PING_URL:...`.
+    "PING_URL": "https://studyforge.onrender.com/api/health",
+    // Shallow health check on the schedule; the deep one is for real uptime
+    // monitoring, and hitting Postgres every 10 minutes buys nothing here.
+    "DEEP_CHECK": "false"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

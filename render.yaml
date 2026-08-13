@@ -1,0 +1,52 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# StudyForge deploys as a single Node web service. It is a Next.js monolith
+# (Server Components, Server Actions, route handlers and a Node-runtime proxy in
+# one app), so there is no separate frontend to host elsewhere.
+#
+# The free instance type sleeps after ~15 minutes without traffic; the
+# Cloudflare Worker in workers/pinger keeps it awake by hitting /api/health.
+services:
+  - type: web
+    name: studyforge
+    runtime: node
+    plan: free
+    # Closest free region to the Indian exam audience this app targets.
+    region: singapore
+    branch: main
+
+    # Migrations run here because Render's preDeployCommand needs a paid
+    # instance type. `migrate deploy` only applies already-committed
+    # migrations — it never generates or resets — so it is safe to run on
+    # every build, and a failure correctly blocks the deploy.
+    buildCommand: npm ci && npx prisma generate && npx prisma migrate deploy && npm run build
+    startCommand: npm run start
+
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.1"
+      - key: NODE_ENV
+        value: production
+
+      # Set these in the Render dashboard (Environment tab). `sync: false`
+      # means Render prompts for them rather than storing them in this file.
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      # Must be the service's public URL — OAuth and password-reset callbacks
+      # are built from it, so a wrong value silently breaks sign-in.
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      # Optional. Unset, every AI feature falls back to its offline generator.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional. Unset, performance emails are logged instead of sent.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
