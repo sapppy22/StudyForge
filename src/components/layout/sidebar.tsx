@@ -15,11 +15,13 @@ import {
   MessageSquare,
   Settings,
   LogOut,
+  ListChecks,
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjects", icon: BookOpen },
+  { href: "/question-bank", label: "Question bank", icon: ListChecks },
   { href: "/flashcards", label: "Flashcards", icon: Layers },
   { href: "/tests", label: "Tests", icon: GraduationCap },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },

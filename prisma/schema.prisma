@@ -16,6 +16,8 @@ enum ExamType {
   JEE_MAIN
   JEE_ADVANCED
   NEET
+  SSC_CGL
+  SSC_CHSL
   UPSC
   CAT
   CUSTOM
@@ -129,8 +131,85 @@ model Profile {
   proficiencyScores   ProficiencyScore[]
   chatSessions        ChatSession[]
   notifications       Notification[]
+  bankProgress        BankProgress[]
 
   @@map("profiles")
+}
+
+/**
+ * A curated practice problem in the shared, exam-wide question bank.
+ *
+ * Distinct from `Question`, which is generated per user against their own
+ * syllabus. Bank rows are global reference content — the "Striver sheet" — so
+ * they carry no userId, and per-user state lives in `BankProgress`.
+ */
+model BankQuestion {
+  id     String @id @default(uuid())
+  /// Stable human-readable key so re-seeding updates rows instead of duplicating them.
+  slug   String @unique
+
+  examType   ExamType     @map("exam_type")
+  subject    String
+  chapter    String
+  topic      String?
+  type       QuestionType
+  difficulty Difficulty
+
+  content       String
+  options       Json?
+  correctAnswer String? @map("correct_answer")
+  /// Worked approach, revealed after the user attempts the problem.
+  solution      String?
+  hint          String?
+
+  marks           Int  @default(4)
+  /// Target solve time, used to benchmark the per-question timer.
+  expectedMinutes Int  @default(3) @map("expected_minutes")
+  year            Int?
+
+  sourceName String?  @map("source_name")
+  sourceUrl  String?  @map("source_url")
+  tags       String[] @default([])
+  orderIndex Int      @default(0) @map("order_index")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  progress BankProgress[]
+
+  @@index([examType, subject])
+  @@index([examType, difficulty])
+  @@index([examType, chapter])
+  @@map("bank_questions")
+}
+
+/** One user's tick-off state and timing for one bank question. */
+model BankProgress {
+  id         String @id @default(uuid())
+  userId     String @map("user_id")
+  questionId String @map("question_id")
+
+  solved     Boolean @default(false)
+  bookmarked Boolean @default(false)
+  attempts   Int     @default(0)
+  /// Cumulative seconds across all attempts.
+  timeSpentSec Int    @default(0) @map("time_spent_sec")
+  /// Fastest single attempt, for comparison against `expectedMinutes`.
+  bestTimeSec  Int?   @map("best_time_sec")
+  notes        String?
+  solvedAt     DateTime? @map("solved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question BankQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([userId])
+  @@index([userId, solved])
+  @@index([questionId])
+  @@map("bank_progress")
 }
 
 model Goal {
