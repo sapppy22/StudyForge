@@ -17,15 +17,17 @@ import {
   LogOut,
   ListChecks,
   CalendarDays,
+  Trophy,
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjects", icon: BookOpen },
   { href: "/study-plan", label: "Study plan", icon: CalendarDays },
+  { href: "/simulations", label: "Real Simulations", icon: Trophy },
   { href: "/question-bank", label: "Question bank", icon: ListChecks },
   { href: "/flashcards", label: "Flashcards", icon: Layers },
-  { href: "/tests", label: "Tests", icon: GraduationCap },
+  { href: "/tests", label: "Tests & Quizzes", icon: GraduationCap },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/chat", label: "Tutor", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },

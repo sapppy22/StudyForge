@@ -53,11 +53,44 @@ export default function TestsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Tests"
+        title="Tests & Quizzes"
         description="Practice tests and mock exams. Adaptive tests target your weakest topics."
       >
-        {goalId && <AdaptiveTestButton goalId={goalId} size="sm" />}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/simulations"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            Real Exam Simulations →
+          </Link>
+          {goalId && <AdaptiveTestButton goalId={goalId} size="sm" />}
+        </div>
       </PageHeader>
+
+      <Card className="border-emerald-500/20 bg-gradient-to-r from-emerald-950/20 via-card to-card">
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-500">
+                PROCTORED CBT
+              </span>
+              <p className="font-bold text-foreground">Need Full Authentic Exam Simulation?</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Experience official NTA JEE Main, NEET, and SSC CGL test environments with section timings, negative marking, question palettes, and anti-cheat proctoring.
+            </p>
+          </div>
+          <Link
+            href="/simulations"
+            className={cn(
+              buttonVariants({ size: "sm" }),
+              "shrink-0 bg-emerald-600 font-bold text-zinc-950 hover:bg-emerald-500"
+            )}
+          >
+            Launch Simulations →
+          </Link>
+        </CardContent>
+      </Card>
 
       {loading ? (
         <div className="flex h-64 items-center justify-center">

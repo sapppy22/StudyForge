@@ -14,7 +14,12 @@ import {
   CheckCircle2,
   XCircle,
   CircleDashed,
+  Mail,
+  Check,
+  ShieldCheck,
 } from "lucide-react";
+import { ProctoringGuard } from "@/components/simulations/proctoring-guard";
+import type { ProctoringViolation } from "@/data/simulations/types";
 
 export default function TestPage() {
   const { testId } = useParams() as { testId: string };
@@ -23,6 +28,9 @@ export default function TestPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [violations, setViolations] = useState<ProctoringViolation[]>([]);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
     fetch(`/api/tests/${testId}`)
@@ -55,6 +63,7 @@ export default function TestPage() {
           questionId,
           response,
         })),
+        proctoringViolations: violations,
       }),
     });
     const data = await res.json();
@@ -64,6 +73,26 @@ export default function TestPage() {
     setResult(att);
     setSubmitting(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function sendScorecardEmail() {
+    if (!result?.id) return;
+    setSendingEmail(true);
+    try {
+      const res = await fetch("/api/email/performance-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: result.id,
+          proctoringViolationsCount: violations.length,
+        }),
+      });
+      if (res.ok) setEmailSent(true);
+    } catch {
+      // ignore
+    } finally {
+      setSendingEmail(false);
+    }
   }
 
   if (loading) {
@@ -90,12 +119,31 @@ export default function TestPage() {
         : 0;
     return (
       <div className="mx-auto max-w-3xl space-y-5">
-        <Link
-          href="/tests"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" /> All tests
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link
+            href="/tests"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" /> All tests
+          </Link>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={sendScorecardEmail}
+            disabled={sendingEmail || emailSent}
+            className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs"
+          >
+            {sendingEmail ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            ) : emailSent ? (
+              <Check className="mr-1.5 size-3.5 text-emerald-500" />
+            ) : (
+              <Mail className="mr-1.5 size-3.5" />
+            )}
+            {emailSent ? "Report Emailed!" : "Email Me Scorecard"}
+          </Button>
+        </div>
 
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
@@ -180,16 +228,32 @@ export default function TestPage() {
   const total = test.questions.length;
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-24">
-      <Link
-        href="/tests"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" /> All tests
-      </Link>
+      {/* Anti-Cheat Proctoring Guard */}
+      <ProctoringGuard
+        active={!result}
+        maxViolations={3}
+        violations={violations}
+        onViolation={(v) => setViolations((prev) => [...prev, v])}
+        onMaxViolationsExceeded={submit}
+      />
+
+      <div className="flex items-center justify-between">
+        <Link
+          href="/tests"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" /> All tests
+        </Link>
+
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full">
+          <ShieldCheck className="size-3.5" /> Proctoring Active (3 Warnings Max)
+        </span>
+      </div>
+
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{test.title}</h1>
         <p className="text-sm text-muted-foreground">
-          {total} question{total === 1 ? "" : "s"} · untimed
+          {total} question{total === 1 ? "" : "s"} · Practice Test
         </p>
       </div>
 
