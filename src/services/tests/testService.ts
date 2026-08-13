@@ -3,6 +3,7 @@ import { AttemptStatus, QuestionType, TestStatus } from "@prisma/client";
 import { gradeSubjective } from "@/services/ai/grading";
 import { recomputeTopicProficiency } from "@/services/analytics/proficiencyService";
 import { refreshPlanFromPerformance } from "@/services/plans/studyPlanService";
+import { sendPerformanceReportForAttempt } from "@/services/email/emailService";
 
 export interface AnswerInput {
   questionId: string;
@@ -116,6 +117,11 @@ export async function submitTestAnswers(
   // rather than a one-off schedule.
   await refreshPlanFromPerformance(userId, test.goalId).catch(() => {
     // A planning failure must not fail the submission the student just made.
+  });
+
+  // Automatically send / log performance email report
+  sendPerformanceReportForAttempt(attempt.id, userId).catch((err) => {
+    console.warn("[TestService] Performance email dispatch skipped:", err);
   });
 
   return { attemptId: attempt.id, score: totalScore, maxScore };

@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { signOut } from "@/services/auth/auth";
-import { Sparkles, CheckCircle2, MinusCircle } from "lucide-react";
+import { Sparkles, CheckCircle2, MinusCircle, Mail } from "lucide-react";
+import { EmailDigestSettings } from "@/components/settings/email-digest-settings";
 
 export default async function SettingsPage() {
   const user = await requireUser();
@@ -49,6 +50,20 @@ export default async function SettingsPage() {
         <CardContent className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Theme</span>
           <ThemeToggle />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="size-4.5 text-primary" /> Performance Email Reports
+          </CardTitle>
+          <CardDescription>
+            Automated performance scorecards, periodic quiz summaries, and syllabus coverage milestones.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <EmailDigestSettings userEmail={user.email ?? "student@studyforge.app"} />
         </CardContent>
       </Card>
 
