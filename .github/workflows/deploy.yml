@@ -1,0 +1,57 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-render:
+    name: Trigger Render Deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Trigger Render Deploy Hook (if configured)
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        run: |
+          echo "🚀 Triggering instant deploy on Render via Deploy Hook..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n 1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ Render deployment triggered successfully!"
+            echo "Response: $BODY"
+          else
+            echo "⚠️ Render deploy hook returned HTTP $HTTP_STATUS: $BODY"
+          fi
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+
+      - name: Trigger Render API Deploy (if API key configured)
+        if: env.RENDER_API_KEY != '' && env.RENDER_SERVICE_ID != ''
+        run: |
+          echo "🚀 Triggering Render deploy via REST API..."
+          curl -s -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": "do_not_clear"}'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+
+      - name: Deployment Info
+        run: |
+          echo "### 🚀 Deployment Triggered" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\` by @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Render**: Connected repositories with auto-deploy enabled in Render Blueprint (\`render.yaml\`) will automatically build and deploy every push to \`main\`." >> $GITHUB_STEP_SUMMARY
+          echo "- **Vercel**: If linked to Vercel, every push to \`main\` triggers instant production zero-downtime deployment." >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Endpoint**: Production liveness is monitored at \`/api/health\`." >> $GITHUB_STEP_SUMMARY

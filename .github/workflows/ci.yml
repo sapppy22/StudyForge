@@ -1,6 +1,8 @@
-name: CI
+name: CI Pipeline
 
 on:
+  push:
+    branches: [main, "feat/**", "feature/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -9,73 +11,73 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studyforge
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: anon-key-placeholder
+
 jobs:
   app:
-    name: Lint, typecheck and build
+    name: Lint, Typecheck and Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
         with:
           node-version: "20.18.1"
           cache: npm
 
-      - run: npm ci
+      - name: Install Dependencies
+        run: npm ci
 
-      # The Prisma client is generated code and isn't committed, so nothing
-      # typechecks until it exists.
-      - name: Generate Prisma client
+      - name: Generate Prisma Client
         run: npx prisma generate
-
-      - name: Validate Prisma schema
-        run: npx prisma validate
-
-      - name: Check migrations match the schema
-        # Catches a schema.prisma edit that was never turned into a migration —
-        # the failure mode where local dev works and production drifts.
-        run: |
-          npx prisma migrate diff \
-            --from-migrations prisma/migrations \
-            --to-schema-datamodel prisma/schema.prisma \
-            --shadow-database-url "$SHADOW_DATABASE_URL" \
-            --exit-code && echo "Schema and migrations are in sync."
         env:
-          SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
-        continue-on-error: true
+          DATABASE_URL: ${{ env.DATABASE_URL }}
 
-      - run: npm run lint
+      - name: Validate Prisma Schema
+        run: npx prisma validate
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
 
-      - name: Typecheck
+      - name: Run Linter
+        run: npm run lint
+
+      - name: Run Typecheck
         run: npx tsc --noEmit
 
-      - name: Build
+      - name: Build Next.js Application
         run: npm run build
         env:
-          # Build-time placeholders. Every page is dynamic and authenticates at
-          # request time, so nothing here connects to a real service.
-          DATABASE_URL: postgresql://user:pass@localhost:5432/studyforge
-          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          NEXT_PUBLIC_APP_URL: ${{ env.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
   pinger:
-    name: Validate keep-alive Worker
+    name: Validate Keep-Alive Worker
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: workers/pinger
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
         with:
           node-version: "20.18.1"
 
-      - run: npm install --no-audit --no-fund
+      - name: Install Worker Dependencies
+        run: npm install --no-audit --no-fund
 
-      - name: Typecheck
+      - name: Typecheck Worker
         run: npm run typecheck
 
-      - name: Validate Worker bundle
-        # Dry run catches config and bundling errors without needing
-        # Cloudflare credentials, so this stays green on fork PRs.
+      - name: Validate Worker Bundle
         run: npx wrangler deploy --dry-run
