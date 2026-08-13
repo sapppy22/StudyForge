@@ -132,8 +132,42 @@ model Profile {
   chatSessions        ChatSession[]
   notifications       Notification[]
   bankProgress        BankProgress[]
+  mindMaps            MindMap[]
 
   @@map("profiles")
+}
+
+/**
+ * An AI-generated memory map over a topic's notes.
+ *
+ * `data` holds a nested `{ label, detail?, children[] }` tree rather than
+ * rendered geometry — layout is computed client-side, so the same map can be
+ * re-laid out for different screen sizes without regenerating it.
+ */
+model MindMap {
+  id            String  @id @default(uuid())
+  userId        String  @map("user_id")
+  topicId       String  @map("topic_id")
+  /// Set when the map was built from one specific note rather than the whole topic.
+  contentItemId String? @map("content_item_id")
+
+  title String
+  data  Json
+  /// "ai" when Claude generated it, "offline" for the deterministic fallback.
+  generatedBy String @default("ai") @map("generated_by")
+  /// Denormalized node count, so lists don't have to walk the JSON.
+  nodeCount   Int    @default(0) @map("node_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user        Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic       SyllabusTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  contentItem ContentItem?  @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([topicId])
+  @@map("mind_maps")
 }
 
 /**
@@ -253,6 +287,7 @@ model SyllabusTopic {
   flashcards        Flashcard[]
   proficiencyScores ProficiencyScore[]
   chatSessions      ChatSession[]
+  mindMaps          MindMap[]
 
   @@index([goalId])
   @@index([parentId])
@@ -274,8 +309,9 @@ model ContentItem {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  topic SyllabusTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  user  Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic    SyllabusTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user     Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mindMaps MindMap[]
 
   @@index([topicId])
   @@index([userId])

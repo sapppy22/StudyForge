@@ -30,7 +30,9 @@ import {
   Loader2,
   Plus,
   Sparkles,
+  Network,
 } from "lucide-react";
+import { MindMapPanel } from "@/components/mindmap/mind-map-panel";
 
 export function TopicPageClient({
   topic,
@@ -241,6 +243,9 @@ export function TopicPageClient({
           <TabsTrigger value="videos">
             <Play className="size-4" /> Videos
           </TabsTrigger>
+          <TabsTrigger value="mindmap">
+            <Network className="size-4" /> Memory map
+          </TabsTrigger>
           <TabsTrigger value="flashcards">
             <Layers className="size-4" /> Flashcards
           </TabsTrigger>
@@ -449,6 +454,17 @@ export function TopicPageClient({
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* Memory map */}
+        <TabsContent value="mindmap" className="space-y-4 pt-4">
+          <MindMapPanel
+            topicId={topic.id}
+            notes={notes.map((n: { id: string; title: string }) => ({
+              id: n.id,
+              title: n.title,
+            }))}
+          />
         </TabsContent>
       </Tabs>
     </div>
