@@ -2,6 +2,7 @@ import { prisma } from "@/db/prisma";
 import { AttemptStatus, QuestionType, TestStatus } from "@prisma/client";
 import { gradeSubjective } from "@/services/ai/grading";
 import { recomputeTopicProficiency } from "@/services/analytics/proficiencyService";
+import { refreshPlanFromPerformance } from "@/services/plans/studyPlanService";
 
 export interface AnswerInput {
   questionId: string;
@@ -109,6 +110,13 @@ export async function submitTestAnswers(
       recomputeTopicProficiency(userId, topicId)
     )
   );
+
+  // Proficiency just moved, so the study plan's priorities are stale. Rewrite
+  // the future days from the new numbers — this is what makes the plan adaptive
+  // rather than a one-off schedule.
+  await refreshPlanFromPerformance(userId, test.goalId).catch(() => {
+    // A planning failure must not fail the submission the student just made.
+  });
 
   return { attemptId: attempt.id, score: totalScore, maxScore };
 }

@@ -16,11 +16,13 @@ import {
   Settings,
   LogOut,
   ListChecks,
+  CalendarDays,
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjects", icon: BookOpen },
+  { href: "/study-plan", label: "Study plan", icon: CalendarDays },
   { href: "/question-bank", label: "Question bank", icon: ListChecks },
   { href: "/flashcards", label: "Flashcards", icon: Layers },
   { href: "/tests", label: "Tests", icon: GraduationCap },

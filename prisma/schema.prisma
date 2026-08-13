@@ -113,6 +113,19 @@ enum NotificationType {
   ingestion_complete
 }
 
+enum StudyPlanStatus {
+  active
+  archived
+}
+
+/** What a scheduled block asks the student to actually do. */
+enum StudyTaskKind {
+  learn
+  practice
+  revise
+  test
+}
+
 model Profile {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -133,8 +146,78 @@ model Profile {
   notifications       Notification[]
   bankProgress        BankProgress[]
   mindMaps            MindMap[]
+  studyPlans          StudyPlan[]
 
   @@map("profiles")
+}
+
+/**
+ * A dated study plan for one goal.
+ *
+ * Scheduling is deterministic (a weakness-weighted knapsack over the daily
+ * minute budget); the AI contributes the rationale and per-task coaching notes.
+ * Regenerating bumps `version` and rewrites only the *future* days, so a
+ * student's completed history is never rewritten under them.
+ */
+model StudyPlan {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  goalId String @map("goal_id")
+
+  title        String
+  startDate    DateTime  @map("start_date")
+  endDate      DateTime? @map("end_date")
+  dailyMinutes Int       @map("daily_minutes")
+
+  status StudyPlanStatus @default(active)
+  /// Plain-English explanation of why the plan is ordered the way it is.
+  rationale   String?
+  generatedBy String   @default("ai") @map("generated_by")
+  /// Incremented every time performance data reshapes the plan.
+  version     Int      @default(1)
+  generatedAt DateTime @default(now()) @map("generated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  Profile         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal  Goal            @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  tasks StudyPlanTask[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([userId, status])
+  @@map("study_plans")
+}
+
+model StudyPlanTask {
+  id      String  @id @default(uuid())
+  planId  String  @map("plan_id")
+  topicId String? @map("topic_id")
+
+  title       String
+  description String?
+  kind        StudyTaskKind
+  minutes     Int           @default(30)
+  /// The day this block belongs to, normalized to UTC midnight.
+  scheduledFor DateTime     @map("scheduled_for")
+  orderIndex   Int          @default(0) @map("order_index")
+  /// Weakness-derived urgency (higher first); drives re-prioritisation.
+  priority     Int          @default(0)
+
+  completed   Boolean   @default(false)
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  plan  StudyPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  topic SyllabusTopic? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  @@index([planId])
+  @@index([planId, scheduledFor])
+  @@index([topicId])
+  @@map("study_plan_tasks")
 }
 
 /**
@@ -262,6 +345,7 @@ model Goal {
   questions   Question[]
   tests       Test[]
   chatSessions ChatSession[]
+  studyPlans  StudyPlan[]
 
   @@index([userId])
   @@map("goals")
@@ -288,6 +372,7 @@ model SyllabusTopic {
   proficiencyScores ProficiencyScore[]
   chatSessions      ChatSession[]
   mindMaps          MindMap[]
+  planTasks         StudyPlanTask[]
 
   @@index([goalId])
   @@index([parentId])
