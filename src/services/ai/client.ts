@@ -10,7 +10,23 @@ import { isAiConfigured } from "@/lib/env";
  * without any external credentials.
  */
 
-export const AI_MODEL = "claude-opus-4-8";
+export const AI_MODEL = "claude-opus-5";
+
+/**
+ * Effort tunes how much the model deliberates. StudyForge's calls are bounded,
+ * well-specified generation tasks (make N questions, grade one answer), so the
+ * low end is the right default — the tutor raises it for open-ended dialogue.
+ */
+export type Effort = "low" | "medium" | "high";
+const DEFAULT_EFFORT: Effort = "low";
+
+/**
+ * Thinking is on by default on Claude Opus 5, and `max_tokens` caps thinking
+ * *plus* the response text. These budgets are sized with that in mind — a value
+ * tuned for a non-thinking model truncates the answer mid-JSON.
+ */
+const DEFAULT_MAX_TOKENS = 8192;
+const DEFAULT_JSON_MAX_TOKENS = 16000;
 
 let client: Anthropic | null = null;
 
@@ -51,10 +67,12 @@ export async function generateText(opts: {
   system: string;
   prompt: string;
   maxTokens?: number;
+  effort?: Effort;
 }): Promise<string> {
   const msg = await getClient().messages.create({
     model: AI_MODEL,
-    max_tokens: opts.maxTokens ?? 2048,
+    max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
+    output_config: { effort: opts.effort ?? DEFAULT_EFFORT },
     system: opts.system,
     messages: [{ role: "user", content: opts.prompt }],
   });
@@ -66,8 +84,12 @@ export async function generateJson<T>(opts: {
   system: string;
   prompt: string;
   maxTokens?: number;
+  effort?: Effort;
 }): Promise<T> {
-  const text = await generateText({ ...opts, maxTokens: opts.maxTokens ?? 4096 });
+  const text = await generateText({
+    ...opts,
+    maxTokens: opts.maxTokens ?? DEFAULT_JSON_MAX_TOKENS,
+  });
   return parseJson<T>(text);
 }
 
@@ -76,25 +98,34 @@ export async function generateChat(opts: {
   system: string;
   messages: Anthropic.MessageParam[];
   maxTokens?: number;
+  effort?: Effort;
 }): Promise<string> {
   const msg = await getClient().messages.create({
     model: AI_MODEL,
-    max_tokens: opts.maxTokens ?? 2048,
+    max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
+    output_config: { effort: opts.effort ?? DEFAULT_EFFORT },
     system: opts.system,
     messages: opts.messages,
   });
   return extractText(msg.content);
 }
 
-/** Streaming tutor completion — returns a text stream of assistant deltas. */
+/**
+ * Streaming tutor completion — returns a text stream of assistant deltas.
+ * Streaming also keeps long explanations from tripping the SDK's HTTP timeout.
+ */
 export function streamText(opts: {
   system: string;
   messages: Anthropic.MessageParam[];
   maxTokens?: number;
+  effort?: Effort;
 }) {
   return getClient().messages.stream({
     model: AI_MODEL,
-    max_tokens: opts.maxTokens ?? 2048,
+    max_tokens: opts.maxTokens ?? 16000,
+    // Tutoring is open-ended reasoning, so it earns more deliberation than the
+    // bounded generation calls above.
+    output_config: { effort: opts.effort ?? "medium" },
     system: opts.system,
     messages: opts.messages,
   });
