@@ -1,75 +1,169 @@
-# StudyForge
+# ⚡ StudyForge
 
-Adaptive, spaced-repetition exam-prep platform built with Next.js 16 (App Router,
-Turbopack), TypeScript, Tailwind CSS v4, shadcn/ui (base-nova), Prisma + Postgres
-(pgvector), Supabase auth, Recharts, `ts-fsrs`, and the Anthropic Claude API.
+**Next-generation, adaptive competitive exam preparation platform** featuring authentic CBT simulations, anti-cheat proctoring, AI-generated memory maps, dynamic study plans, curated subjective question banks, and automated performance email reports.
 
-## Getting started
+---
 
-1. **Configure environment.** Copy `.env.example` to `.env.local` and fill in your
-   Postgres (`DATABASE_URL`) and Supabase credentials. `ANTHROPIC_API_KEY` is
-   optional — see _Offline mode_ below.
-   ```bash
-   cp .env.example .env.local
-   ```
-2. **Install dependencies.**
-   ```bash
-   npm install
-   ```
-3. **Set up the database** (needs a Postgres with the `pgvector` extension
-   available — Supabase provides this). The initial migration enables pgvector,
-   creates all tables, and adds a full-text index for note retrieval.
-   ```bash
-   npx prisma migrate deploy   # apply prisma/migrations (or `migrate dev` locally)
-   npx prisma generate
-   ```
-4. **Run the dev server.**
-   ```bash
-   npm run dev
-   ```
+## 🌟 Key Features
 
-## Offline mode (no API key required)
+### 1. 🔐 Production Authentication & Sign-Up
+- Real functional email/password authentication via Supabase Auth.
+- Secure email verification redirect flows and password reset recovery (`/reset-password`).
+- Automatic profile provisioning in PostgreSQL via Prisma.
 
-Every AI-backed feature degrades gracefully. When `ANTHROPIC_API_KEY` is set,
-StudyForge uses **Claude (`claude-opus-4-8`)** for question generation, subjective
-grading, flashcard creation and the tutor chatbot. When it is **not** set, the app
-falls back to deterministic, notes-aware generators so the entire product still
-works end-to-end. The Settings page shows whether AI is connected.
+### 2. 📝 Curated Question Bank (Striver Sheet Model)
+- Curated subjective problem sets for **JEE Main, JEE Advanced, NEET (UG), and SSC CGL**.
+- Categorized by Subject, Chapter, Topic, and Difficulty (`Easy`, `Medium`, `Hard`).
+- Interactive solve tracking: tick/untick progress, per-question benchmark stopwatches, and on-demand worked solution reveals.
 
-## Features
+### 3. 🧠 AI-Generated Memory Maps
+- Hierarchical interactive mind maps generated over topic notes and syllabus chapters.
+- Expandable/collapsible nodes, pan, zoom, and instant SVG/JSON export.
+- Offline deterministic fallback when AI keys are not configured.
 
-- **Auth** with Supabase (email + Google/GitHub OAuth). Profiles are provisioned
-  in Postgres via Prisma on first sign-in.
-- **Goal wizard** with syllabus templates — pick an exam and get a subject →
-  chapter → topic tree automatically.
-- **Topic workspace** — add notes and video links; generate flashcards and
-  practice tests grounded in your notes.
-- **AI question generation** — objective (MCQ) and subjective questions, grounded
-  in your notes via retrieval, with an offline fallback.
-- **Test engine** — auto-grading for objective questions and rubric-based grading
-  for written answers (Claude, or heuristic fallback), with per-question feedback.
-- **FSRS flashcards** — spaced-repetition scheduling that carries card state
-  forward correctly; new and manually-created cards enter the review queue.
-- **Proficiency analytics** — recency-weighted proficiency per topic, weakness
-  analysis, score-trend and proficiency charts, and a decay model.
-- **Weakness-weighted adaptive tests** — one click builds a mock test targeting
-  your lowest-proficiency topics.
-- **AI tutor** — streaming chat grounded in your notes (RAG), with source chips.
-- **Notifications** — due flashcards / pending tests surfaced in the header.
-- **Background jobs** (Inngest) — daily digest, weekly proficiency decay, and
-  ingestion/question-generation hooks.
-- **Polished UX** — light/dark themes, command palette (⌘K), loading/empty/error
-  states, and responsive layouts throughout.
+### 4. 📅 Adaptive AI Study Plan
+- Goal-driven study scheduler tailored to daily time budgets and target exam dates.
+- **Dynamic Re-Prioritization**: Automatically rewrites future schedule blocks when test or quiz scores move topic proficiencies.
 
-## Architecture notes
+### 5. 🎯 Real Exam CBT Simulations
+- Authentic Computer-Based Test (CBT) engine modeled after official **NTA (JEE Main/Advanced), NEET (UG), and SSC CGL (Tier-1)** interfaces.
+- Sectional navigation with live timers, negative marking calculations (+4/-1, +2/-0.5), numerical integer keypads, and official TCS/NTA question status palettes (Answered, Marked for Review, Not Visited).
+- Instant scorecards with accuracy %, section-wise breakdown, percentile estimates, and worked solutions.
 
-- **Services** (`src/services/*`) hold data access and are server-only modules
-  (auth actions live in `src/services/auth/auth.ts`, marked `"use server"`).
-- **AI layer** (`src/services/ai/*`) wraps the official `@anthropic-ai/sdk` with a
-  graceful offline fallback for every capability.
-- **RAG** uses Postgres full-text search over your notes
-  (`src/services/ai/retrieval.ts`) — no external embeddings provider is required.
-  The `content_items.embedding` vector column and `findSimilarChunks` remain as an
-  extension point if you add one.
-- **Routing** — Next.js 16 renamed the `middleware` convention to `proxy`; the
-  Supabase session refresh lives in `proxy.ts`.
+### 6. 🛡️ Anti-Cheat & Exam Proctoring Engine
+- Fullscreen lockdown enforcement during exams.
+- Real-time tab switch (`visibilitychange`) and app switch (`window.onblur`) detection.
+- Keyboard shortcut interception (DevTools, Inspect, Copy) and synthesized audio alarm.
+- Violation counter (3 warnings max) with automatic test lockdown and disqualification flags.
+
+### 7. 📊 Automated Performance Email Reports
+- Multi-channel delivery via Resend API and in-app notifications.
+- Rich responsive black & emerald green HTML email templates:
+  - **Exam Simulation Scorecard**: Score breakdown, accuracy, time spent, percentile, proctoring audit, and revision suggestions.
+  - **Periodic Quiz Digest**: Weekly streak, questions solved, and priority chapters.
+  - **Syllabus Coverage Milestone**: Celebratory progress milestone alerts.
+
+### 8. 🌙 Black & Emerald Theme
+- Tailored modern dark theme (`#09090b` / `#000000` with emerald green `#10b981` accents).
+- High-contrast accessibility with light/system theme support.
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer | Technology |
+|---|---|
+| **Framework** | Next.js 16 (App Router, Turbopack, Server Actions) |
+| **Language** | TypeScript 5 (Strict Mode) |
+| **Styling** | Tailwind CSS v4 + Vanilla CSS Design Tokens |
+| **Database** | PostgreSQL + Prisma ORM (with `pgvector` extension) |
+| **Authentication** | Supabase Auth (`@supabase/ssr`) |
+| **AI Engine** | Anthropic Claude API (`@ai-sdk/anthropic` & SDK) |
+| **Charts** | Recharts |
+| **Spaced Repetition** | `ts-fsrs` (Free Spaced Repetition Scheduler) |
+| **Email Delivery** | Resend API + In-App Notification Engine |
+| **CI / CD** | GitHub Actions + Render Blueprint (`render.yaml`) + Vercel |
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone & Install Dependencies
+```bash
+git clone https://github.com/sapppy22/StudyForge.git
+cd StudyForge
+npm install
+```
+
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env.local`:
+```bash
+cp .env.example .env.local
+```
+
+Fill in your configuration:
+```env
+# PostgreSQL connection string
+DATABASE_URL="postgresql://postgres:password@localhost:5432/studyforge?schema=public"
+
+# Supabase Auth
+NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-key"
+
+# Public App URL
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
+# Optional: Claude AI features (offline fallback used if empty)
+ANTHROPIC_API_KEY=""
+
+# Optional: Resend API for email delivery (in-app notifications used if empty)
+RESEND_API_KEY=""
+EMAIL_FROM="StudyForge <reports@studyforge.app>"
+```
+
+### 3. Initialize Database
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
+
+### 4. Run Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) to access the app.
+
+---
+
+## 🔄 CI/CD & Deployment Pipeline
+
+StudyForge is configured for continuous integration and continuous deployment:
+
+```mermaid
+flowchart LR
+    A[git push to main] --> B[GitHub Actions CI / CD]
+    B --> C[Lint + Typecheck + Next.js Build]
+    B --> D[Deploy Pipeline]
+    D --> E[Render Auto-Deploy Blueprint]
+    D --> F[Vercel Instant Deployment]
+    E --> G[Live Production App Updated]
+    F --> G
+```
+
+- **GitHub Actions (`.github/workflows/ci.yml`)**: Validates schema, runs ESLint, TypeScript checks (`tsc --noEmit`), and builds the Next.js production bundle on every push and pull request.
+- **Continuous Deployment (`.github/workflows/deploy.yml`)**: Automates deployment hooks upon merging to `main`.
+- **Render (`render.yaml`)**: Native Node.js web service blueprint linked to branch `main` with `/api/health` monitoring.
+- **Vercel (`vercel.json`)**: Zero-config deployment with automatic client generation via `"postinstall": "prisma generate"`.
+
+---
+
+## 📁 Repository Structure
+
+```
+├── .github/workflows/       # CI and Deployment Actions
+├── prisma/
+│   ├── schema.prisma        # Database schema (PostgreSQL)
+│   └── migrations/          # Version-controlled database migrations
+├── public/                  # Static assets & brand media
+├── src/
+│   ├── app/                 # Next.js 16 App Router pages & API routes
+│   │   ├── (auth)/          # Authentication & password reset
+│   │   ├── (dashboard)/     # Main app screens (Simulations, Bank, Plan, Tests)
+│   │   └── api/             # REST API route handlers
+│   ├── components/          # Reusable UI & feature components
+│   │   ├── simulations/     # CBT exam player & proctoring guard
+│   │   ├── mindmap/         # AI memory maps canvas
+│   │   ├── bank/            # Question sheet & timer components
+│   │   └── plan/            # Adaptive study plan timeline
+│   ├── data/                # Seed questions, patterns & curated mock papers
+│   ├── lib/                 # Shared utilities, session helpers & validators
+│   └── services/            # Backend service layer (AI, Email, Simulations, Tests)
+├── render.yaml              # Render infrastructure blueprint
+└── vercel.json              # Vercel deployment specification
+```
+
+---
+
+## 🛡️ License
+
+MIT License. Built with precision for competitive exam students.

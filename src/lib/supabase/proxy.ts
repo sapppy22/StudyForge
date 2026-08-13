@@ -18,6 +18,7 @@ const PROTECTED_PREFIXES = [
   "/topics",
   "/flashcards",
   "/tests",
+  "/simulations",
   "/exams",
   "/question-bank",
   "/study-plan",
