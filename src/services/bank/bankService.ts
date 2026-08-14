@@ -23,38 +23,33 @@ export interface BankQuery {
   search?: string;
 }
 
-/** Idempotently upserts every curated question. Safe to run repeatedly. */
+/** Idempotently seeds every curated question. Safe to run repeatedly. */
 export async function seedQuestionBank() {
-  let written = 0;
+  const records = questionBank.map((seed, index) => ({
+    slug: seed.slug,
+    examType: seed.examType,
+    subject: seed.subject,
+    chapter: seed.chapter,
+    topic: seed.topic ?? null,
+    type: seed.type,
+    difficulty: seed.difficulty,
+    content: seed.content,
+    correctAnswer: seed.correctAnswer ?? null,
+    solution: seed.solution ?? null,
+    hint: seed.hint ?? null,
+    marks: seed.marks ?? 4,
+    expectedMinutes: seed.expectedMinutes ?? 3,
+    year: seed.year ?? null,
+    tags: seed.tags ?? [],
+    orderIndex: index,
+  }));
 
-  for (const [index, seed] of questionBank.entries()) {
-    const data = {
-      examType: seed.examType,
-      subject: seed.subject,
-      chapter: seed.chapter,
-      topic: seed.topic ?? null,
-      type: seed.type,
-      difficulty: seed.difficulty,
-      content: seed.content,
-      correctAnswer: seed.correctAnswer ?? null,
-      solution: seed.solution ?? null,
-      hint: seed.hint ?? null,
-      marks: seed.marks ?? 4,
-      expectedMinutes: seed.expectedMinutes ?? 3,
-      year: seed.year ?? null,
-      tags: seed.tags ?? [],
-      orderIndex: index,
-    };
+  const result = await prisma.bankQuestion.createMany({
+    data: records,
+    skipDuplicates: true,
+  });
 
-    await prisma.bankQuestion.upsert({
-      where: { slug: seed.slug },
-      create: { slug: seed.slug, ...data },
-      update: data,
-    });
-    written += 1;
-  }
-
-  return { written };
+  return { written: result.count };
 }
 
 /**
