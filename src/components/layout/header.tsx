@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, Menu, LayoutDashboard, Layers, BarChart3, MessageSquare, Target, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,7 +16,8 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Sidebar } from "./sidebar";
+import { Sidebar, type Account } from "./sidebar";
+import { Badge } from "@/components/ui/badge";
 import { Notifications } from "./notifications";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
@@ -28,7 +30,7 @@ const quickActions = [
   { label: "Create a goal", value: "/goals/new", icon: Target },
 ];
 
-export function Header() {
+export function Header({ account }: { account?: Account }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
 
@@ -59,7 +61,7 @@ export function Header() {
             <Menu className="size-5" />
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0">
-            <Sidebar />
+            <Sidebar account={account} />
           </SheetContent>
         </Sheet>
         <span className="font-semibold">StudyForge</span>
@@ -80,6 +82,13 @@ export function Header() {
       </button>
 
       <div className="flex items-center gap-1">
+        {account?.isGuest && (
+          <Link href="/login" className="mr-1">
+            <Badge variant="secondary" className="cursor-pointer gap-1">
+              Guest — save progress
+            </Badge>
+          </Link>
+        )}
         <Notifications />
         <ThemeToggle />
       </div>

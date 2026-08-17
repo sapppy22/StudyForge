@@ -24,13 +24,14 @@ export default function SimulationRunnerPage() {
     ])
       .then(([simData, userData]) => {
         setSimulation(simData);
-        setUser(
-          userData?.user || {
-            id: "guest-user",
-            email: "student@studyforge.app",
-            name: "Candidate",
-          }
-        );
+        // The candidate panel mimics a real CBT hall ticket, so it always needs
+        // a line under the name — guests have no address to put there.
+        const me = userData?.user;
+        setUser({
+          id: me?.id ?? "candidate",
+          email: me?.email ?? "Guest session",
+          name: me?.name ?? "Candidate",
+        });
       })
       .catch((err) => {
         console.error("Error loading simulation:", err);

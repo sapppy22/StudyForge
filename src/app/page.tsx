@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { GuestButton } from "@/components/auth/guest-button";
+import { isGuestModeEnabled } from "@/lib/env";
 import {
   BrainCircuit,
   BookOpen,
@@ -82,16 +84,30 @@ export default function Home() {
               Get started free
               <ArrowRight className="size-4" />
             </Link>
-            <Link
-              href="/dashboard"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "h-11 px-6 text-base"
-              )}
-            >
-              Go to dashboard
-            </Link>
+            {isGuestModeEnabled() ? (
+              <GuestButton
+                size="lg"
+                label="Try it as a guest"
+                className="h-11 px-6 text-base"
+              />
+            ) : (
+              <Link
+                href="/dashboard"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "lg" }),
+                  "h-11 px-6 text-base"
+                )}
+              >
+                Go to dashboard
+              </Link>
+            )}
           </div>
+          {isGuestModeEnabled() && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Guest mode needs no email — every feature is unlocked, and signing up
+              later keeps everything you&apos;ve done.
+            </p>
+          )}
         </section>
 
         <section className="mx-auto grid w-full max-w-6xl gap-4 px-6 pb-24 sm:grid-cols-2 lg:grid-cols-3">

@@ -18,7 +18,16 @@ import {
   ListChecks,
   CalendarDays,
   Trophy,
+  UserRound,
+  ShieldCheck,
 } from "lucide-react";
+
+/** The signed-in (or guest) identity rendered in the sidebar footer. */
+export type Account = {
+  name: string;
+  email: string;
+  isGuest: boolean;
+};
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -33,7 +42,7 @@ const nav = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function Sidebar() {
+export function Sidebar({ account }: { account?: Account }) {
   const pathname = usePathname();
 
   return (
@@ -71,13 +80,41 @@ export function Sidebar() {
         </nav>
       </ScrollArea>
 
-      <div className="border-t border-sidebar-border p-2">
+      <div className="space-y-1 border-t border-sidebar-border p-2">
+        {account?.isGuest && (
+          <div className="mb-1 rounded-lg bg-sidebar-accent/60 p-3">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+              <UserRound className="size-3.5" />
+              Guest mode
+            </span>
+            <p className="mt-1 text-xs text-sidebar-foreground/70">
+              Progress lives in this browser only.
+            </p>
+            <Link
+              href="/login"
+              className="mt-2 flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-4"
+            >
+              <ShieldCheck className="size-3.5" />
+              Save it to an account
+            </Link>
+          </div>
+        )}
+
+        {account && !account.isGuest && (
+          <div className="px-3 py-1.5">
+            <p className="truncate text-sm font-medium">{account.name}</p>
+            <p className="truncate text-xs text-sidebar-foreground/70">
+              {account.email}
+            </p>
+          </div>
+        )}
+
         <button
           onClick={() => signOut()}
           className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <LogOut className="size-4" />
-          Sign out
+          {account?.isGuest ? "Exit guest session" : "Sign out"}
         </button>
       </div>
     </aside>

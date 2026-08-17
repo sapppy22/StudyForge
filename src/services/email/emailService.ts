@@ -1,6 +1,7 @@
 import { prisma } from "@/db/prisma";
 import { NotificationType } from "@prisma/client";
 import { APP_URL } from "@/lib/env";
+import { isGuestEmail } from "@/lib/guest";
 import type {
   EmailSendResult,
   ExamScorecardPayload,
@@ -37,8 +38,10 @@ async function deliverEmail({
   const resendApiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.EMAIL_FROM || "StudyForge <reports@studyforge.app>";
 
-  // 1. Try sending via Resend if key is available
-  if (resendApiKey) {
+  // 1. Try sending via Resend if key is available. Guest profiles carry a
+  //    placeholder address that would only bounce, so their reports skip
+  //    delivery and land in the in-app notification feed instead.
+  if (resendApiKey && !isGuestEmail(to)) {
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",

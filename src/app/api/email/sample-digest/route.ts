@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import { getApiUser, isGuestUser } from "@/lib/session";
 import { sendQuizDigestEmail } from "@/services/email/emailService";
 import { APP_URL } from "@/lib/env";
 
 export async function POST() {
   const user = await getApiUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Guests have no deliverable address — say so instead of pretending to send.
+  if (isGuestUser(user)) {
+    return NextResponse.json(
+      { error: "Create an account to receive email reports." },
+      { status: 403 }
+    );
+  }
 
   const result = await sendQuizDigestEmail(
     {

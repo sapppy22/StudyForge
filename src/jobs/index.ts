@@ -34,6 +34,29 @@ export const weeklyReportJob = inngest.createFunction(
   }
 );
 
+/**
+ * Weekly: reclaim guest profiles that can no longer be reached.
+ *
+ * A guest cookie is valid for 30 days and `ensureProfile` touches the row on
+ * every authenticated request, so a guest profile untouched for 45 days has a
+ * long-dead session behind it. Deleting the profile cascades its goals, notes,
+ * tests and flashcards — which is exactly the point: nobody can sign in to it.
+ * Guests who signed up were re-keyed onto their real account and are no longer
+ * `guest_`-prefixed, so their work is never in scope here.
+ */
+export const guestCleanupJob = inngest.createFunction(
+  { id: "guest-cleanup", triggers: [{ cron: "TZ=Asia/Kolkata 30 3 * * 0" }] },
+  async ({ step }) => {
+    return step.run("delete-expired-guest-profiles", async () => {
+      const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+      const { count } = await prisma.profile.deleteMany({
+        where: { id: { startsWith: "guest_" }, updatedAt: { lt: cutoff } },
+      });
+      return { guestProfilesDeleted: count, cutoff: cutoff.toISOString() };
+    });
+  }
+);
+
 /** On upload: mark a content item processed (chunking/embedding hook point). */
 export const ingestionJob = inngest.createFunction(
   { id: "process-ingestion", triggers: [{ event: "ingestion/uploaded" }] },
@@ -78,6 +101,7 @@ export const questionGenerationJob = inngest.createFunction(
 export const functions = [
   dailyDigestJob,
   weeklyReportJob,
+  guestCleanupJob,
   ingestionJob,
   questionGenerationJob,
 ];

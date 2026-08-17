@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { ensureProfile } from "@/lib/session";
+import { claimGuestProfile, ensureProfile } from "@/lib/session";
 
 /**
  * OAuth / email-confirmation / password-recovery callback.
  *
  * Supabase redirects here with a one-time `code`, which we exchange for a
- * session cookie before forwarding the user on to `next`.
+ * session cookie before forwarding the user on to `next`. This is also where a
+ * guest session gets promoted: the confirmation link is opened in the same
+ * browser that holds the guest cookie, so everything they did before signing up
+ * follows them onto the real account.
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -38,8 +41,10 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error && data.user) {
-      // Create/refresh the Prisma profile row (via Prisma so the NOT NULL
-      // updatedAt column is populated correctly).
+      // Re-key any guest profile onto this account first, then create/refresh
+      // the Prisma profile row (via Prisma so the NOT NULL updatedAt column is
+      // populated correctly).
+      await claimGuestProfile(data.user);
       await ensureProfile(data.user);
       return NextResponse.redirect(`${baseUrl}${next}`);
     }

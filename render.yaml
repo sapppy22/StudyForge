@@ -32,15 +32,36 @@ services:
 
       # Set these in the Render dashboard (Environment tab). `sync: false`
       # means Render prompts for them rather than storing them in this file.
+      #
+      # Use the Supavisor pooler connection string here, not the direct
+      # `db.<ref>.supabase.co` host: that host is IPv6-only and Render's
+      # outbound network is IPv4.
       - key: DATABASE_URL
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
+      # Current-generation public key (`sb_publishable_…`).
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      # Legacy JWT key — only for projects that haven't rotated forward.
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
         sync: false
       # Must be the service's public URL — OAuth and password-reset callbacks
       # are built from it, so a wrong value silently breaks sign-in.
       - key: NEXT_PUBLIC_APP_URL
+        sync: false
+
+      # Guest mode ("false" to require an account) and the HMAC key for its
+      # session cookie. Render generates the key once and keeps it stable, so
+      # guest sessions survive deploys.
+      - key: NEXT_PUBLIC_ENABLE_GUEST_MODE
+        value: "true"
+      - key: GUEST_SESSION_SECRET
+        generateValue: true
+
+      # Social buttons to show, e.g. "google,github". Only list providers
+      # enabled in the Supabase dashboard.
+      - key: NEXT_PUBLIC_OAUTH_PROVIDERS
         sync: false
       # Optional. Unset, every AI feature falls back to its offline generator.
       - key: ANTHROPIC_API_KEY

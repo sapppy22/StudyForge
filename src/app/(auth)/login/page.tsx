@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isGuestUser } from "@/lib/session";
+import { enabledOAuthProviders, isGuestModeEnabled } from "@/lib/env";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -18,15 +19,25 @@ export default async function LoginPage({
 }) {
   const { next, error } = await searchParams;
 
-  // Already signed in — skip the form.
-  if (await getSessionUser()) redirect("/dashboard");
+  const user = await getSessionUser();
+  const guest = isGuestUser(user);
 
-  const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  // Already signed in for real — skip the form. Guests stay: this page is how
+  // they turn a guest session into an account.
+  if (user && !guest) redirect("/dashboard");
+
+  const safeNext =
+    next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
 
   return (
     <LoginForm
       next={safeNext}
-      initialError={error ? (callbackErrors[error] ?? callbackErrors.callback_failed) : undefined}
+      guestSession={guest}
+      guestEnabled={isGuestModeEnabled()}
+      oauthProviders={enabledOAuthProviders()}
+      initialError={
+        error ? (callbackErrors[error] ?? callbackErrors.callback_failed) : undefined
+      }
     />
   );
 }

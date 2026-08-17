@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isGuestUser } from "@/lib/session";
 import {
   Card,
   CardContent,
@@ -18,9 +18,11 @@ export default async function ResetPasswordPage() {
   // The recovery link routes through /api/auth/callback, which exchanges the
   // code for a session before landing here. No session means the link was
   // already used, expired, or opened directly.
+  // A guest cookie is not a recovery session — only a real Supabase session,
+  // created by the callback exchanging the recovery code, can set a password.
   const user = await getSessionUser();
 
-  if (!user) {
+  if (!user || isGuestUser(user)) {
     return (
       <Card>
         <CardHeader>

@@ -3,8 +3,15 @@
 import { redirect } from "next/navigation";
 import * as z from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { ensureProfile } from "@/lib/session";
-import { APP_URL, isSupabaseConfigured } from "@/lib/env";
+import { claimGuestProfile, ensureProfile } from "@/lib/session";
+import {
+  APP_URL,
+  enabledOAuthProviders,
+  isGuestModeEnabled,
+  isSupabaseConfigured,
+  type OAuthProvider,
+} from "@/lib/env";
+import { endGuestSession, guestUser, startGuestSession } from "@/lib/guest";
 import {
   SignInSchema,
   SignUpSchema,
@@ -23,7 +30,7 @@ import {
  */
 
 const NOT_CONFIGURED =
-  "Authentication is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment.";
+  "Authentication is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in your environment.";
 
 function fail(message: string): AuthFormState {
   return { message, status: "error" };
@@ -74,8 +81,10 @@ export async function signIn(
   if (error) return fail(friendlyAuthError(error.message));
   if (!data.user) return fail("Sign-in failed. Try again.");
 
-  // Guarantee the Prisma profile row exists — every application table has a
-  // foreign key onto it, including for users created outside this flow.
+  // Carry any guest-session work onto this account, then guarantee the Prisma
+  // profile row exists — every application table has a foreign key onto it,
+  // including for users created outside this flow.
+  await claimGuestProfile(data.user);
   await ensureProfile(data.user);
 
   redirect(safeNext(formData.get("next") as string | null));
@@ -120,9 +129,10 @@ export async function signUp(
     };
   }
 
-  if (data.user) await ensureProfile(data.user);
-
-  // No session means email confirmation is required.
+  // No session means email confirmation is required. Both the profile row and
+  // any guest promotion wait for /api/auth/callback (which the confirmation
+  // link routes through): an unconfirmed user can't write anything, and until
+  // they confirm, guest work has to stay reachable under the guest id.
   if (!data.session) {
     return {
       message: `Almost there — confirm your email at ${email}, then sign in.`,
@@ -130,7 +140,12 @@ export async function signUp(
     };
   }
 
-  redirect("/dashboard");
+  if (data.user) {
+    await claimGuestProfile(data.user);
+    await ensureProfile(data.user);
+  }
+
+  redirect(safeNext(formData.get("next") as string | null));
 }
 
 export async function requestPasswordReset(
@@ -191,13 +206,46 @@ export async function updatePassword(
   redirect("/dashboard");
 }
 
-export async function signInWithOAuth(provider: "google" | "github") {
+/**
+ * Starts (or resumes) a guest session and drops the user straight into the app.
+ *
+ * No Supabase round-trip: the identity is a signed cookie plus a `profiles` row,
+ * so guest mode works even when Supabase is unconfigured or unreachable. Signing
+ * up later promotes the same row, so nothing done as a guest is lost.
+ */
+export async function continueAsGuest(next?: string): Promise<AuthFormState> {
+  if (!isGuestModeEnabled()) {
+    return fail("Guest access is disabled. Create an account to continue.");
+  }
+
+  let id: string;
+  try {
+    id = await startGuestSession();
+    await ensureProfile(guestUser(id));
+  } catch {
+    return fail(
+      "Couldn't start a guest session — the database is unreachable. Try again in a moment."
+    );
+  }
+
+  redirect(safeNext(next));
+}
+
+export async function signInWithOAuth(provider: OAuthProvider, next?: string) {
   if (!isSupabaseConfigured()) return fail(NOT_CONFIGURED);
+
+  // The provider also has to be turned on in the Supabase dashboard; the env
+  // allowlist is what keeps the UI from offering a button that dead-ends.
+  if (!enabledOAuthProviders().includes(provider)) {
+    return fail(`${provider} sign-in isn't enabled for this deployment.`);
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: `${APP_URL}/api/auth/callback` },
+    options: {
+      redirectTo: `${APP_URL}/api/auth/callback?next=${encodeURIComponent(safeNext(next))}`,
+    },
   });
 
   if (error) return fail(friendlyAuthError(error.message));
@@ -211,5 +259,9 @@ export async function signOut() {
     const supabase = await createClient();
     await supabase.auth.signOut();
   }
+  // Guest work stays in the database — the cookie is what's dropped, so signing
+  // out of guest mode is reversible only via sign-up (which is the point of the
+  // "save your progress" prompts).
+  await endGuestSession();
   redirect("/login");
 }

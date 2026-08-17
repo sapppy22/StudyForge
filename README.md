@@ -6,10 +6,14 @@
 
 ## 🌟 Key Features
 
-### 1. 🔐 Production Authentication & Sign-Up
-- Real functional email/password authentication via Supabase Auth.
+### 1. 🔐 Production Authentication, Sign-Up & Guest Mode
+- Real functional email/password authentication via Supabase Auth (publishable or legacy anon keys).
 - Secure email verification redirect flows and password reset recovery (`/reset-password`).
+- Optional social sign-in (Google / GitHub), shown only for providers you've actually enabled.
 - Automatic profile provisioning in PostgreSQL via Prisma.
+- **Guest mode**: use the entire product with no account — a signed, http-only cookie plus a real
+  `profiles` row, so goals, notes, tests, flashcards and analytics behave identically. Sign up later
+  and the guest's work is re-keyed onto the new account, nothing lost.
 
 ### 2. 📝 Curated Question Bank (Striver Sheet Model)
 - Curated subjective problem sets for **JEE Main, JEE Advanced, NEET (UG), and SSC CGL**.
@@ -83,15 +87,26 @@ cp .env.example .env.local
 
 Fill in your configuration:
 ```env
-# PostgreSQL connection string
+# PostgreSQL connection string (Supabase → Project Settings → Database).
+# Prefer the Supavisor pooler host on serverless/IPv4-only hosts — see
+# "Supabase setup" below.
 DATABASE_URL="postgresql://postgres:password@localhost:5432/studyforge?schema=public"
 
-# Supabase Auth
+# Supabase Auth (Project Settings → API Keys)
 NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-key"
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="sb_publishable_..."
+# Legacy JWT key — only needed if the project hasn't rotated to a publishable key
+NEXT_PUBLIC_SUPABASE_ANON_KEY=""
 
-# Public App URL
+# Public App URL — OAuth and password-reset callbacks are built from this
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
+# Guest mode ("false" to require an account) + HMAC key for its session cookie
+NEXT_PUBLIC_ENABLE_GUEST_MODE="true"
+GUEST_SESSION_SECRET=""            # openssl rand -hex 32
+
+# Social buttons to show. Only list providers enabled in Supabase, e.g. "google,github"
+NEXT_PUBLIC_OAUTH_PROVIDERS=""
 
 # Optional: Claude AI features (offline fallback used if empty)
 ANTHROPIC_API_KEY=""
@@ -111,7 +126,45 @@ npx prisma generate
 ```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) to access the app.
+Open [http://localhost:3000](http://localhost:3000) to access the app. Click **Try it as a guest** to
+go straight in, or create an account with email + password.
+
+---
+
+## 🔑 Supabase & Auth Setup
+
+**API keys.** `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_…`) is the current-generation
+browser key and takes precedence; `NEXT_PUBLIC_SUPABASE_ANON_KEY` remains supported for projects
+still on legacy JWT keys. Set at least one — `isSupabaseConfigured()` gates every auth action on it,
+and when neither is present the app degrades to guest-only rather than throwing.
+
+**Database URL.** `db.<ref>.supabase.co:5432` (direct) resolves to **IPv6 only**. Render and Vercel
+egress over IPv4, so production must use the Supavisor pooler string instead:
+
+```
+postgresql://postgres.<project-ref>:<password>@<pooler-host>:6543/postgres?pgbouncer=true
+```
+
+Copy the exact pooler host from Project Settings → Database → *Connection pooling* (it encodes the
+project's AWS region). Local development can keep the direct host if your network has IPv6.
+
+**Dashboard settings that affect sign-in** (Supabase → Authentication):
+- *URL Configuration* → **Site URL** and **Redirect URLs** must include
+  `https://<your-domain>/api/auth/callback` (and `http://localhost:3000/api/auth/callback` for local
+  dev). Without it, email confirmation and OAuth links bounce.
+- *Providers* → **Email** is on by default; email confirmation is required unless you turn on
+  auto-confirm, which is why sign-up says "confirm your email, then sign in".
+- Enable **Google**/**GitHub** there *and* list them in `NEXT_PUBLIC_OAUTH_PROVIDERS` for the buttons
+  to appear. Providers that aren't enabled are hidden rather than dead-ending at the redirect.
+
+**Guest mode.** `POST` of the `continueAsGuest` action issues a `sf_guest` cookie —
+`<guest_uuid>.<issuedAt>.<HMAC-SHA256>`, http-only, `SameSite=Lax`, `Secure` in production, 30-day
+lifetime enforced on both ends. `proxy.ts` verifies the signature on every request, so a tampered
+cookie is treated as unauthenticated. Guest ids are prefixed `guest_` and can never collide with a
+Supabase UUID. On sign-in / sign-up confirmation, `claimGuestProfile()` re-keys `profiles.id` onto the
+real auth id; every child table declares `ON UPDATE CASCADE`, so all of the guest's work moves in one
+statement. Guest profiles carry a placeholder `@guest.studyforge.local` address, and the email
+dispatcher keeps their reports in-app only.
 
 ---
 

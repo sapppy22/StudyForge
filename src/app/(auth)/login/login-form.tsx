@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,8 +18,10 @@ import {
   signUp,
   requestPasswordReset,
   signInWithOAuth,
+  continueAsGuest,
 } from "@/services/auth/auth";
-import { Loader2 } from "lucide-react";
+import type { OAuthProvider } from "@/lib/env";
+import { Loader2, UserRound } from "lucide-react";
 
 type Mode = "signin" | "signup" | "forgot";
 
@@ -40,18 +43,33 @@ const copy: Record<Mode, { title: string; description: string; cta: string }> = 
   },
 };
 
+const providerLabels: Record<OAuthProvider, string> = {
+  google: "Google",
+  github: "GitHub",
+};
+
 export function LoginForm({
   next,
   initialError,
+  guestEnabled,
+  guestSession,
+  oauthProviders,
 }: {
   next: string;
   initialError?: string;
+  /** Whether to offer "continue as guest". */
+  guestEnabled: boolean;
+  /** Whether the visitor is *currently* browsing as a guest. */
+  guestSession: boolean;
+  oauthProviders: OAuthProvider[];
 }) {
-  const [mode, setMode] = useState<Mode>("signin");
-  const [oauthError, setOauthError] = useState<string | null>(
+  // A guest landing here is trying to keep their work, so open on sign-up.
+  const [mode, setMode] = useState<Mode>(guestSession ? "signup" : "signin");
+  const [actionError, setActionError] = useState<string | null>(
     initialError ?? null
   );
   const [oauthPending, startOAuth] = useTransition();
+  const [guestPending, startGuest] = useTransition();
 
   // One state slot per action keeps each form's errors independent, and keeps
   // the hook count stable across mode switches.
@@ -77,26 +95,42 @@ export function LoginForm({
 
   const errors = state?.errors ?? {};
   const { title, description, cta } = copy[mode];
+  const busy = pending || oauthPending || guestPending;
 
-  function oauth(provider: "google" | "github") {
-    setOauthError(null);
+  function oauth(provider: OAuthProvider) {
+    setActionError(null);
     startOAuth(async () => {
       // Resolves only on failure — success redirects to the provider.
-      const result = await signInWithOAuth(provider);
-      if (result?.message) setOauthError(result.message);
+      const result = await signInWithOAuth(provider, next);
+      if (result?.message) setActionError(result.message);
+    });
+  }
+
+  function guest() {
+    setActionError(null);
+    startGuest(async () => {
+      // Resolves only on failure — success redirects into the app.
+      const result = await continueAsGuest(next);
+      if (result?.message) setActionError(result.message);
     });
   }
 
   function switchTo(nextMode: Mode) {
     setMode(nextMode);
-    setOauthError(null);
+    setActionError(null);
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <CardTitle className="text-xl">
+          {guestSession && mode === "signup" ? "Save your progress" : title}
+        </CardTitle>
+        <CardDescription>
+          {guestSession && mode === "signup"
+            ? "Create an account and everything you've done as a guest comes with you."
+            : description}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* `key` remounts the form on mode switch so stale values don't carry over. */}
@@ -167,17 +201,17 @@ export function LoginForm({
           )}
 
           <FormMessage state={state} />
-          {oauthError && (
-            <FormMessage state={{ message: oauthError, status: "error" }} />
+          {actionError && (
+            <FormMessage state={{ message: actionError, status: "error" }} />
           )}
 
-          <Button type="submit" className="w-full" disabled={pending}>
+          <Button type="submit" className="w-full" disabled={busy}>
             {pending && <Loader2 className="size-4 animate-spin" />}
             {cta}
           </Button>
         </form>
 
-        {mode !== "forgot" && (
+        {mode !== "forgot" && (oauthProviders.length > 0 || guestEnabled) && (
           <>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -188,24 +222,56 @@ export function LoginForm({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                type="button"
-                disabled={oauthPending}
-                onClick={() => oauth("google")}
+            {oauthProviders.length > 0 && (
+              <div
+                className={
+                  oauthProviders.length > 1 ? "grid grid-cols-2 gap-2" : "grid gap-2"
+                }
               >
-                Google
-              </Button>
-              <Button
-                variant="outline"
-                type="button"
-                disabled={oauthPending}
-                onClick={() => oauth("github")}
+                {oauthProviders.map((provider) => (
+                  <Button
+                    key={provider}
+                    variant="outline"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => oauth(provider)}
+                  >
+                    {providerLabels[provider]}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {guestEnabled && !guestSession && (
+              <div className="space-y-1.5">
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={guest}
+                >
+                  {guestPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <UserRound className="size-4" />
+                  )}
+                  Continue as guest
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  Full access, no email needed. Sign up later to keep your progress.
+                </p>
+              </div>
+            )}
+
+            {guestSession && (
+              <Link
+                href="/dashboard"
+                className="block text-center text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
               >
-                GitHub
-              </Button>
-            </div>
+                Keep browsing as a guest
+              </Link>
+            )}
           </>
         )}
 

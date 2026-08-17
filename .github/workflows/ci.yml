@@ -11,11 +11,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Build-time placeholders only. Nothing in CI talks to a real Supabase project
+# or database; the app reads these lazily so a placeholder still builds.
 env:
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studyforge
   NEXT_PUBLIC_APP_URL: http://localhost:3000
   NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: anon-key-placeholder
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+  NEXT_PUBLIC_ENABLE_GUEST_MODE: "true"
+  NEXT_PUBLIC_OAUTH_PROVIDERS: ""
 
 jobs:
   app:
@@ -56,7 +60,9 @@ jobs:
           DATABASE_URL: ${{ env.DATABASE_URL }}
           NEXT_PUBLIC_APP_URL: ${{ env.NEXT_PUBLIC_APP_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_ENABLE_GUEST_MODE: ${{ env.NEXT_PUBLIC_ENABLE_GUEST_MODE }}
+          NEXT_PUBLIC_OAUTH_PROVIDERS: ${{ env.NEXT_PUBLIC_OAUTH_PROVIDERS }}
 
   pinger:
     name: Validate Keep-Alive Worker
