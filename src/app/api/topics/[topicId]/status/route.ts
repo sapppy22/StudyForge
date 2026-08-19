@@ -1,21 +1,15 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
-import { updateTopicStatus } from "@/services/topics/topicService";
+import * as z from "zod";
 import { TopicStatus } from "@prisma/client";
+import { readJson, withUser } from "@/lib/api";
+import { updateTopicStatus } from "@/services/topics/topicService";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ topicId: string }> }
-) {
-  const { topicId } = await params;
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// `status` used to be cast straight from the body into Prisma, so anything the
+// client sent reached the database and came back as an opaque 500.
+const StatusSchema = z.object({
+  status: z.enum(TopicStatus),
+});
 
-  const body = await request.json();
-  const topic = await updateTopicStatus(
-    topicId,
-    user.id,
-    body.status as TopicStatus
-  );
-  return NextResponse.json(topic);
-}
+export const PATCH = withUser<{ topicId: string }>(async ({ request, params, user }) => {
+  const { status } = await readJson(request, StatusSchema);
+  return updateTopicStatus(params.topicId, user.id, status);
+});
