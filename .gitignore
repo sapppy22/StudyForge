@@ -39,6 +39,7 @@ yarn-error.log*
 
 # command code
 .commandcode/
+.commit-msg
 
 # cloudflare workers
 .wrangler/

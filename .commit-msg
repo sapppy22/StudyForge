@@ -1,8 +1,0 @@
-feat(ai): switch from Anthropic/Claude to Groq
-
-- Replace Anthropic SDK with Groq SDK in AI client
-- Read GROQ_API_KEY instead of ANTHROPIC_API_KEY
-- Update fallback messages and UI labels to reference Groq
-- Install groq-sdk dependency
-
-Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
