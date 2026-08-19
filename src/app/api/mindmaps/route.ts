@@ -1,43 +1,24 @@
-import { NextResponse } from "next/server";
 import * as z from "zod";
-import { getApiUser } from "@/lib/session";
+import { NextResponse } from "next/server";
+import { readJson, readQuery, withUser } from "@/lib/api";
 import { createMindMap, listMindMaps } from "@/services/mindmaps/mindMapService";
+
+const TopicQuery = z.object({ topicId: z.string().min(1) });
 
 const CreateSchema = z.object({
   topicId: z.uuid(),
   contentItemId: z.uuid().optional(),
 });
 
-export async function GET(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = withUser(async ({ request, user }) => {
+  const { topicId } = readQuery(request, TopicQuery);
+  return listMindMaps(topicId, user.id);
+});
 
-  const topicId = new URL(request.url).searchParams.get("topicId");
-  if (!topicId)
-    return NextResponse.json({ error: "topicId required" }, { status: 400 });
-
-  return NextResponse.json(await listMindMaps(topicId, user.id));
-}
-
-export async function POST(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid body", details: z.flattenError(parsed.error).fieldErrors },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const map = await createMindMap({ userId: user.id, ...parsed.data });
-    return NextResponse.json(map, { status: 201 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Generation failed";
-    // "not found" here means the topic or note isn't the caller's.
-    const status = /not found/i.test(message) ? 404 : 500;
-    return NextResponse.json({ error: message }, { status });
-  }
-}
+export const POST = withUser(async ({ request, user }) => {
+  const body = await readJson(request, CreateSchema);
+  const map = await createMindMap({ userId: user.id, ...body });
+  // A topic or note that isn't the caller's surfaces as NotFoundError from the
+  // service, which the wrapper turns into a 404.
+  return NextResponse.json(map, { status: 201 });
+});

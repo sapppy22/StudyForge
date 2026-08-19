@@ -1,5 +1,6 @@
 import { prisma } from "@/db/prisma";
 import { TopicStatus } from "@prisma/client";
+import { NotFoundError } from "@/lib/errors";
 
 export async function updateTopicStatus(
   topicId: string,
@@ -9,7 +10,7 @@ export async function updateTopicStatus(
   const topic = await prisma.syllabusTopic.findFirst({
     where: { id: topicId, goal: { userId } },
   });
-  if (!topic) throw new Error("Topic not found");
+  if (!topic) throw new NotFoundError("Topic not found");
 
   return prisma.syllabusTopic.update({
     where: { id: topicId },

@@ -7,6 +7,7 @@ import {
   generateMindMap,
   type MindMapNode,
 } from "@/services/ai/mindmap";
+import { NotFoundError } from "@/lib/errors";
 
 /**
  * Memory maps over a topic's notes.
@@ -26,7 +27,7 @@ export interface CreateMindMapInput {
 
 export async function createMindMap(input: CreateMindMapInput) {
   const topic = await getTopicById(input.topicId, input.userId);
-  if (!topic) throw new Error("Topic not found");
+  if (!topic) throw new NotFoundError("Topic not found");
 
   let notes: RetrievedNote[];
   let title = topic.title;
@@ -40,7 +41,7 @@ export async function createMindMap(input: CreateMindMapInput) {
       },
       select: { id: true, title: true, rawText: true },
     });
-    if (!item) throw new Error("Note not found");
+    if (!item) throw new NotFoundError("Note not found");
 
     // Single-note maps read the whole note rather than the retrieval snippet —
     // there's no relevance ranking to do when the source is already chosen.

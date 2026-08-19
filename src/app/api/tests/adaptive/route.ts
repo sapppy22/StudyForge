@@ -1,16 +1,13 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readJson, withUser } from "@/lib/api";
 import { createAdaptiveTest } from "@/services/questions/questionService";
 
-export async function POST(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const AdaptiveSchema = z.object({
+  goalId: z.string().min(1),
+  title: z.string().min(1).max(200).optional(),
+});
 
-  const body = await request.json().catch(() => ({}));
-  if (!body.goalId) {
-    return NextResponse.json({ error: "goalId is required" }, { status: 400 });
-  }
-
-  const test = await createAdaptiveTest(user.id, body.goalId, body.title);
-  return NextResponse.json(test);
-}
+export const POST = withUser(async ({ request, user }) => {
+  const { goalId, title } = await readJson(request, AdaptiveSchema);
+  return createAdaptiveTest(user.id, goalId, title);
+});

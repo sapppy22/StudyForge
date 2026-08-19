@@ -3,6 +3,7 @@ import { ChatRole } from "@prisma/client";
 import { retrieveNotes } from "@/services/ai/retrieval";
 import { tutorReply, type TutorContext } from "@/services/ai/tutor";
 import type { Anthropic } from "@/services/ai/client";
+import { NotFoundError } from "@/lib/errors";
 
 export async function createChatSession(
   userId: string,
@@ -57,7 +58,7 @@ export async function prepareTutorTurn(
     where: { id: sessionId, userId },
     include: { topic: true, goal: true },
   });
-  if (!session) throw new Error("Session not found");
+  if (!session) throw new NotFoundError("Session not found");
 
   await prisma.chatMessage.create({
     data: { sessionId, role: ChatRole.user, content: userContent },

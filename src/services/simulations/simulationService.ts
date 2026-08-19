@@ -7,6 +7,7 @@ import type {
 } from "@/data/simulations/types";
 import { sendExamScorecardEmail } from "@/services/email/emailService";
 import { APP_URL } from "@/lib/env";
+import { NotFoundError } from "@/lib/errors";
 
 export interface SimulationSubmissionInput {
   simulationId: string;
@@ -34,7 +35,7 @@ export async function gradeAndSubmitSimulation(
 ): Promise<SimulationAttemptResult> {
   const sim = getSimulationById(input.simulationId);
   if (!sim) {
-    throw new Error(`Simulation with ID ${input.simulationId} not found.`);
+    throw new NotFoundError(`Simulation with ID ${input.simulationId} not found.`);
   }
 
   let totalScore = 0;

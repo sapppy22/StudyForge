@@ -4,6 +4,7 @@ import { gradeSubjective } from "@/services/ai/grading";
 import { recomputeTopicProficiency } from "@/services/analytics/proficiencyService";
 import { refreshPlanFromPerformance } from "@/services/plans/studyPlanService";
 import { sendPerformanceReportForAttempt } from "@/services/email/emailService";
+import { NotFoundError } from "@/lib/errors";
 
 export interface AnswerInput {
   questionId: string;
@@ -32,7 +33,7 @@ export async function submitTestAnswers(
     where: { id: testId, userId },
     include: { questions: { include: { question: true } } },
   });
-  if (!test) throw new Error("Test not found");
+  if (!test) throw new NotFoundError("Test not found");
 
   const attempt = await prisma.testAttempt.create({
     data: {
@@ -133,6 +134,27 @@ export async function getAttemptResults(attemptId: string, userId: string) {
     include: {
       test: true,
       answers: { include: { question: true } },
+    },
+  });
+}
+
+/**
+ * The tests list: every test the user owns with its question count and most
+ * recent graded attempt. Lived inline in the route handler, which was the only
+ * place outside this layer reaching into Prisma directly.
+ */
+export async function listTests(userId: string) {
+  return prisma.test.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      _count: { select: { questions: true } },
+      attempts: {
+        where: { status: AttemptStatus.graded },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { id: true, score: true, maxScore: true, createdAt: true },
+      },
     },
   });
 }

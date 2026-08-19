@@ -9,6 +9,7 @@ import {
   generatePlanNarrative,
   type PlanTopicSummary,
 } from "@/services/ai/studyplan";
+import { InvalidStateError, NotFoundError } from "@/lib/errors";
 
 /**
  * Adaptive study plans.
@@ -230,11 +231,11 @@ export async function generateStudyPlan(input: GeneratePlanInput) {
   const goal = await prisma.goal.findFirst({
     where: { id: input.goalId, userId: input.userId },
   });
-  if (!goal) throw new Error("Goal not found");
+  if (!goal) throw new NotFoundError("Goal not found");
 
   const candidates = await loadCandidates(goal.id, input.userId);
   if (candidates.length === 0) {
-    throw new Error(
+    throw new InvalidStateError(
       "This goal has no syllabus topics yet — add topics before generating a plan."
     );
   }
@@ -393,7 +394,7 @@ export async function setTaskCompleted(
     where: { id: taskId, plan: { userId } },
     select: { id: true },
   });
-  if (!task) throw new Error("Task not found");
+  if (!task) throw new NotFoundError("Task not found");
 
   return prisma.studyPlanTask.update({
     where: { id: taskId },

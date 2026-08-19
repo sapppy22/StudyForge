@@ -3,6 +3,7 @@ import { Prisma, Rating as DbRating, FlashcardSource } from "@prisma/client";
 import { createEmptyCard, fsrs, type Card, type Grade } from "ts-fsrs";
 import { retrieveNotes } from "@/services/ai/retrieval";
 import { generateFlashcards } from "@/services/ai/flashcards";
+import { NotFoundError } from "@/lib/errors";
 
 const f = fsrs();
 
@@ -87,7 +88,7 @@ export async function reviewFlashcard(
   const flashcard = await prisma.flashcard.findFirst({
     where: { id: flashcardId, userId },
   });
-  if (!flashcard) throw new Error("Flashcard not found");
+  if (!flashcard) throw new NotFoundError("Flashcard not found");
 
   const now = new Date();
   const previous: Card = flashcard.fsrsState
@@ -129,7 +130,7 @@ export async function generateFlashcardsForTopic(
   const topic = await prisma.syllabusTopic.findFirst({
     where: { id: topicId, goal: { userId } },
   });
-  if (!topic) throw new Error("Topic not found");
+  if (!topic) throw new NotFoundError("Topic not found");
 
   const notes = await retrieveNotes(topicId, userId, undefined, 5);
   const cards = await generateFlashcards({

@@ -1,17 +1,20 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readJson, withUser } from "@/lib/api";
 import { submitTestAnswers } from "@/services/tests/testService";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ testId: string }> }
-) {
-  const { testId } = await params;
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const SubmitSchema = z.object({
+  answers: z
+    .array(
+      z.object({
+        questionId: z.string().min(1),
+        response: z.string().max(20000),
+      })
+    )
+    .default([]),
+});
 
-  const body = await request.json();
+export const POST = withUser<{ testId: string }>(async ({ request, params, user }) => {
+  const { answers } = await readJson(request, SubmitSchema);
   // submitTestAnswers grades every question and recomputes proficiency per topic.
-  const result = await submitTestAnswers(testId, user.id, body.answers ?? []);
-  return NextResponse.json(result);
-}
+  return submitTestAnswers(params.testId, user.id, answers);
+});

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import * as z from "zod";
 import type { User } from "@supabase/supabase-js";
 import { getApiUser } from "@/lib/session";
+import { InvalidStateError, NotFoundError } from "@/lib/errors";
 
 /**
  * Shared plumbing for Route Handlers.
@@ -52,6 +53,14 @@ function errorResponse(message: string, status: number, extra?: object) {
 function translateError(error: unknown): { status: number; message: string; extra?: object } {
   if (error instanceof ApiError) {
     return { status: error.status, message: error.message };
+  }
+
+  // Domain errors carry a message written for the user, so they pass through.
+  if (error instanceof NotFoundError) {
+    return { status: 404, message: error.message };
+  }
+  if (error instanceof InvalidStateError) {
+    return { status: 400, message: error.message };
   }
 
   if (error instanceof z.ZodError) {

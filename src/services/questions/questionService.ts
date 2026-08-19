@@ -11,6 +11,7 @@ import { getTopicById } from "@/services/goals/goalService";
 import { retrieveNotes } from "@/services/ai/retrieval";
 import { generateQuestions } from "@/services/ai/questions";
 import { getWeakestTopics } from "@/services/analytics/proficiencyService";
+import { InvalidStateError, NotFoundError } from "@/lib/errors";
 
 export interface GenerateQuestionsInput {
   topicId: string;
@@ -23,7 +24,7 @@ export interface GenerateQuestionsInput {
 
 export async function generateQuestionsForTopic(input: GenerateQuestionsInput) {
   const topic = await getTopicById(input.topicId, input.userId);
-  if (!topic) throw new Error("Topic not found");
+  if (!topic) throw new NotFoundError("Topic not found");
 
   const subjectPath = [topic.parent?.title, topic.goal?.title]
     .filter(Boolean)
@@ -122,7 +123,7 @@ export async function createAdaptiveTest(
     topicIds = leafTopics.map((t) => t.id);
   }
 
-  if (topicIds.length === 0) throw new Error("No topics available for this goal");
+  if (topicIds.length === 0) throw new InvalidStateError("No topics available for this goal");
 
   const questionIds: string[] = [];
   for (const topicId of topicIds) {
