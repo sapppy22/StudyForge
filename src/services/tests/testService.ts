@@ -44,67 +44,79 @@ export async function submitTestAnswers(
     },
   });
 
-  let totalScore = 0;
-  let maxScore = 0;
-  const topicIds = new Set<string>();
+  // Grade every question concurrently. Subjective answers each cost a model
+  // call, so grading them in sequence made submission take as long as the sum
+  // of those calls — a five-question written test sat there for half a minute.
+  // The generation route bounds a test at 30 questions, which keeps the fan-out
+  // reasonable.
+  const graded = await Promise.all(
+    test.questions.map(async (tq) => {
+      const question = tq.question;
+      const response =
+        answers.find((a) => a.questionId === question.id)?.response?.trim() ?? "";
 
-  for (const tq of test.questions) {
-    const question = tq.question;
-    topicIds.add(question.topicId);
+      if (OBJECTIVE_TYPES.includes(question.type)) {
+        const expected = (question.correctAnswer ?? "").trim().toLowerCase();
+        const isCorrect =
+          response.length > 0 && response.toLowerCase() === expected;
+        return {
+          question,
+          response,
+          isCorrect,
+          score: isCorrect ? MAX_PER_QUESTION : 0,
+          feedback: isCorrect
+            ? "Correct."
+            : `Incorrect. The correct answer is ${question.correctAnswer ?? "—"}.`,
+        };
+      }
 
-    const provided = answers.find((a) => a.questionId === question.id);
-    const response = provided?.response?.trim() ?? "";
-
-    let isCorrect: boolean | null = null;
-    let score = 0;
-    let feedback = "";
-
-    if (OBJECTIVE_TYPES.includes(question.type)) {
-      const expected = (question.correctAnswer ?? "").trim().toLowerCase();
-      isCorrect = response.length > 0 && response.toLowerCase() === expected;
-      score = isCorrect ? MAX_PER_QUESTION : 0;
-      feedback = isCorrect
-        ? "Correct."
-        : `Incorrect. The correct answer is ${question.correctAnswer ?? "—"}.`;
-    } else {
-      const graded = await gradeSubjective({
+      const result = await gradeSubjective({
         question: question.content,
         rubric: question.rubric as { criteria: string[] } | null,
         modelAnswer: question.explanation,
         response,
         maxScore: MAX_PER_QUESTION,
       });
-      score = graded.score;
-      isCorrect = graded.isCorrect;
-      feedback = graded.feedback;
-    }
 
-    totalScore += score;
-    maxScore += MAX_PER_QUESTION;
-
-    await prisma.answer.create({
-      data: {
-        attemptId: attempt.id,
-        questionId: question.id,
+      return {
+        question,
         response,
-        isCorrect,
-        score,
-        maxScore: MAX_PER_QUESTION,
-        feedback,
-        gradedAt: new Date(),
-      },
-    });
-  }
+        isCorrect: result.isCorrect,
+        score: result.score,
+        feedback: result.feedback,
+      };
+    })
+  );
 
-  await prisma.testAttempt.update({
-    where: { id: attempt.id },
-    data: { score: totalScore, maxScore, status: AttemptStatus.graded },
+  const totalScore = graded.reduce((sum, row) => sum + row.score, 0);
+  const maxScore = graded.length * MAX_PER_QUESTION;
+  const topicIds = new Set(graded.map((row) => row.question.topicId));
+  const gradedAt = new Date();
+
+  // One insert rather than one per question.
+  await prisma.answer.createMany({
+    data: graded.map((row) => ({
+      attemptId: attempt.id,
+      questionId: row.question.id,
+      response: row.response,
+      isCorrect: row.isCorrect,
+      score: row.score,
+      maxScore: MAX_PER_QUESTION,
+      feedback: row.feedback,
+      gradedAt,
+    })),
   });
 
-  await prisma.test.update({
-    where: { id: testId },
-    data: { status: TestStatus.completed, completedAt: new Date() },
-  });
+  await prisma.$transaction([
+    prisma.testAttempt.update({
+      where: { id: attempt.id },
+      data: { score: totalScore, maxScore, status: AttemptStatus.graded },
+    }),
+    prisma.test.update({
+      where: { id: testId },
+      data: { status: TestStatus.completed, completedAt: gradedAt },
+    }),
+  ]);
 
   // Recompute proficiency for every topic covered by this test.
   await Promise.all(

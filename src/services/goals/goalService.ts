@@ -95,6 +95,38 @@ export async function createGoal(input: CreateGoalInput) {
   return goal;
 }
 
+/**
+ * Goals without their syllabus, for callers that only need to name or pick one.
+ *
+ * `getGoalsByUser` eagerly loads every topic, every topic's children and their
+ * children, plus a proficiency score per node. That is the right shape for the
+ * dashboard and the subject tree and far too much for a picker, which is all
+ * the study plan screen renders.
+ */
+export async function listGoalSummaries(userId: string) {
+  return prisma.goal.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      examType: true,
+      examDate: true,
+      status: true,
+    },
+  });
+}
+
+/** The id of the user's current goal, without loading the goal itself. */
+export async function getPrimaryGoalId(userId: string) {
+  const goal = await prisma.goal.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  return goal?.id;
+}
+
 export async function getGoalsByUser(userId: string) {
   return prisma.goal.findMany({
     where: { userId },
