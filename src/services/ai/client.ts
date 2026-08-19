@@ -1,49 +1,34 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
 import { isAiConfigured } from "@/lib/env";
 
 /**
- * Thin wrapper around the official Anthropic SDK.
+ * Thin wrapper around the Groq SDK.
  *
- * Every AI-backed feature degrades gracefully: when `ANTHROPIC_API_KEY` is
+ * Every AI-backed feature degrades gracefully: when `GROQ_API_KEY` is
  * unset, `isAiConfigured()` is false and callers use deterministic offline
  * generators instead. This keeps StudyForge fully functional end-to-end
  * without any external credentials.
  */
 
-export const AI_MODEL = "claude-opus-5";
+export const AI_MODEL = "llama-3.3-70b-versatile";
 
 /**
- * Effort tunes how much the model deliberates. StudyForge's calls are bounded,
- * well-specified generation tasks (make N questions, grade one answer), so the
- * low end is the right default — the tutor raises it for open-ended dialogue.
+ * @deprecated Kept for API compatibility; Groq models do not expose an effort
+ * parameter, so it is ignored.
  */
 export type Effort = "low" | "medium" | "high";
-const DEFAULT_EFFORT: Effort = "low";
 
-/**
- * Thinking is on by default on Claude Opus 5, and `max_tokens` caps thinking
- * *plus* the response text. These budgets are sized with that in mind — a value
- * tuned for a non-thinking model truncates the answer mid-JSON.
- */
 const DEFAULT_MAX_TOKENS = 8192;
 const DEFAULT_JSON_MAX_TOKENS = 16000;
 
-let client: Anthropic | null = null;
+let client: Groq | null = null;
 
-function getClient(): Anthropic {
-  if (!client) client = new Anthropic(); // resolves ANTHROPIC_API_KEY from env
+function getClient(): Groq {
+  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY });
   return client;
 }
 
 export { isAiConfigured };
-
-function extractText(content: Anthropic.ContentBlock[]): string {
-  return content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n")
-    .trim();
-}
 
 /** Tolerantly parse a JSON value out of a model response (handles code fences). */
 export function parseJson<T>(raw: string): T {
@@ -62,6 +47,16 @@ export function parseJson<T>(raw: string): T {
   }
 }
 
+function toGroqMessages(
+  system: string,
+  prompt: string
+): Groq.Chat.ChatCompletionMessageParam[] {
+  return [
+    { role: "system", content: system },
+    { role: "user", content: prompt },
+  ];
+}
+
 /** One-shot text completion. */
 export async function generateText(opts: {
   system: string;
@@ -69,14 +64,12 @@ export async function generateText(opts: {
   maxTokens?: number;
   effort?: Effort;
 }): Promise<string> {
-  const msg = await getClient().messages.create({
+  const res = await getClient().chat.completions.create({
     model: AI_MODEL,
     max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-    output_config: { effort: opts.effort ?? DEFAULT_EFFORT },
-    system: opts.system,
-    messages: [{ role: "user", content: opts.prompt }],
+    messages: toGroqMessages(opts.system, opts.prompt),
   });
-  return extractText(msg.content);
+  return (res.choices[0]?.message?.content ?? "").trim();
 }
 
 /** One-shot completion whose text is parsed as JSON. */
@@ -96,39 +89,46 @@ export async function generateJson<T>(opts: {
 /** Multi-turn completion over a message history. */
 export async function generateChat(opts: {
   system: string;
-  messages: Anthropic.MessageParam[];
+  messages: { role: "user" | "assistant"; content: string }[];
   maxTokens?: number;
   effort?: Effort;
 }): Promise<string> {
-  const msg = await getClient().messages.create({
+  const res = await getClient().chat.completions.create({
     model: AI_MODEL,
     max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-    output_config: { effort: opts.effort ?? DEFAULT_EFFORT },
-    system: opts.system,
-    messages: opts.messages,
+    messages: [{ role: "system", content: opts.system }, ...opts.messages],
   });
-  return extractText(msg.content);
+  return (res.choices[0]?.message?.content ?? "").trim();
 }
 
 /**
- * Streaming tutor completion — returns a text stream of assistant deltas.
- * Streaming also keeps long explanations from tripping the SDK's HTTP timeout.
+ * Streaming tutor completion — returns an text delta stream compatible with the
+ * Anthropic-shaped consumer in `app/api/chat/stream/route.ts`.
  */
 export function streamText(opts: {
   system: string;
-  messages: Anthropic.MessageParam[];
+  messages: { role: "user" | "assistant"; content: string }[];
   maxTokens?: number;
   effort?: Effort;
 }) {
-  return getClient().messages.stream({
+  const stream = getClient().chat.completions.create({
     model: AI_MODEL,
     max_tokens: opts.maxTokens ?? 16000,
-    // Tutoring is open-ended reasoning, so it earns more deliberation than the
-    // bounded generation calls above.
-    output_config: { effort: opts.effort ?? "medium" },
-    system: opts.system,
-    messages: opts.messages,
+    stream: true,
+    messages: [{ role: "system", content: opts.system }, ...opts.messages],
   });
-}
 
-export type { Anthropic };
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      for await (const chunk of await stream) {
+        const text = chunk.choices[0]?.delta?.content;
+        if (text) {
+          yield {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text },
+          };
+        }
+      }
+    },
+  };
+}

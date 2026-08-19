@@ -77,7 +77,7 @@ function fallbackCards(params: {
   const templates = [
     {
       front: `What is the core concept of ${topicTitle}?`,
-      back: `A concise definition of ${topicTitle}. (Add an Anthropic API key for notes-generated cards.)`,
+      back: `A concise definition of ${topicTitle}. (Add a Groq API key for notes-generated cards.)`,
     },
     {
       front: `Give one key formula or fact related to ${topicTitle}.`,

@@ -160,7 +160,7 @@ function fallbackQuestions(
         { label: "D", text: `None of the above.` },
       ],
       correctAnswer: "A",
-      explanation: `Option A reflects the central concept of ${topicTitle}. Add an Anthropic API key to generate richer, notes-grounded questions.`,
+      explanation: `Option A reflects the central concept of ${topicTitle}. Add a Groq API key to generate richer, notes-grounded questions.`,
       grounded,
     });
   }

@@ -23,7 +23,7 @@ const features = [
   {
     icon: Sparkles,
     title: "Notes → practice questions",
-    body: "Turn your own notes into grounded MCQs and written questions with Claude, or use the built-in offline generator.",
+    body: "Turn your own notes into grounded MCQs and written questions with Groq, or use the built-in offline generator.",
   },
   {
     icon: Layers,
@@ -132,7 +132,7 @@ export default function Home() {
       <footer className="border-t">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-6 py-6 text-sm text-muted-foreground sm:flex-row">
           <span>StudyForge — adaptive exam preparation.</span>
-          <span>Built with Next.js, Prisma, Supabase & Claude.</span>
+          <span>Built with Next.js, Prisma, Supabase & Groq.</span>
         </div>
       </footer>
     </div>

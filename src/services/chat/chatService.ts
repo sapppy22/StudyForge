@@ -1,8 +1,7 @@
 import { prisma } from "@/db/prisma";
 import { ChatRole } from "@prisma/client";
 import { retrieveNotes } from "@/services/ai/retrieval";
-import { tutorReply, type TutorContext } from "@/services/ai/tutor";
-import type { Anthropic } from "@/services/ai/client";
+import { tutorReply, type TutorContext, type TutorMessage } from "@/services/ai/tutor";
 import { NotFoundError } from "@/lib/errors";
 
 export async function createChatSession(
@@ -33,7 +32,7 @@ export async function getChatMessages(sessionId: string, userId: string) {
 
 async function historyForModel(
   sessionId: string
-): Promise<Anthropic.MessageParam[]> {
+): Promise<TutorMessage[]> {
   const msgs = await prisma.chatMessage.findMany({
     where: { sessionId, role: { in: [ChatRole.user, ChatRole.assistant] } },
     orderBy: { createdAt: "asc" },

@@ -1,5 +1,10 @@
-import { generateChat, isAiConfigured, type Anthropic } from "./client";
+import { generateChat, isAiConfigured } from "./client";
 import { formatNotesContext, type RetrievedNote } from "./retrieval";
+
+export interface TutorMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export interface TutorContext {
   topicTitle?: string;
@@ -27,7 +32,7 @@ export function buildTutorSystem(ctx: TutorContext): string {
 
 /** Non-streaming reply (used by the simple send endpoint and as a fallback). */
 export async function tutorReply(
-  history: Anthropic.MessageParam[],
+  history: TutorMessage[],
   ctx: TutorContext
 ): Promise<string> {
   if (isAiConfigured()) {
@@ -42,8 +47,7 @@ export async function tutorReply(
     }
   }
   const lastUser = [...history].reverse().find((m) => m.role === "user");
-  const text =
-    typeof lastUser?.content === "string" ? lastUser.content : "your question";
+  const text = lastUser?.content ?? "your question";
   return tutorFallbackReply(text, ctx);
 }
 
@@ -60,7 +64,7 @@ export function tutorFallbackReply(userText: string, ctx: TutorContext): string 
   return (
     `Thanks for asking about "${userText.slice(0, 140)}". I'm the StudyForge tutor ${scope}.` +
     noteHint +
-    " Connect an Anthropic API key (set ANTHROPIC_API_KEY) to unlock full, notes-grounded tutoring powered by Claude. " +
+    " Connect a Groq API key (set GROQ_API_KEY) to unlock full, notes-grounded tutoring. " +
     "In the meantime, try breaking the problem into smaller steps and reviewing the relevant notes and flashcards for this topic."
   );
 }

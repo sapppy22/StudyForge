@@ -147,7 +147,7 @@ export function MindMapPanel({
               <h3 className="text-sm font-medium">{map.title}</h3>
               <Badge variant="secondary">{map.nodeCount} nodes</Badge>
               {map.generatedBy === "offline" && (
-                <Badge variant="outline" title="Built without an Anthropic API key">
+                <Badge variant="outline" title="Built without a Groq API key">
                   Offline
                 </Badge>
               )}

@@ -116,13 +116,13 @@ export default async function SettingsPage() {
             <Sparkles className="size-4.5 text-primary" /> AI features
           </CardTitle>
           <CardDescription>
-            Question generation, grading, flashcards and the tutor use Claude when
+            Question generation, grading, flashcards and the tutor use Groq when
             configured.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
-            Anthropic API key
+            Groq API key
           </span>
           {aiOn ? (
             <Badge className="gap-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">

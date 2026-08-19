@@ -103,7 +103,7 @@ function fallbackGrade(params: GradeParams, response: string): GradeResult {
     isCorrect: score >= params.maxScore * 0.6,
     feedback:
       "Automated estimate based on rubric keyword coverage and answer depth. " +
-      "Add an Anthropic API key for detailed, rubric-based grading from Claude.",
+      "Add a Groq API key for detailed, rubric-based grading.",
   };
 }
 
