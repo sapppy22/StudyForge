@@ -62,6 +62,14 @@ function friendlyAuthError(message: string): string {
  */
 function guestSetupError(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
+  const message = error instanceof Error ? error.message : "";
+
+  // Connecting through Supabase's Supavisor pooler surfaces a bad password as a
+  // raw "SASL authentication failed" with no Prisma error code attached, so the
+  // message has to be matched as well as the code.
+  if (code === "P1000" || /authentication failed|password authentication/i.test(message)) {
+    return "Couldn't start a guest session — the database rejected its credentials. Check the password in DATABASE_URL.";
+  }
 
   switch (code) {
     case "P1000":
