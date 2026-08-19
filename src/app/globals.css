@@ -152,4 +152,44 @@
   ::selection {
     @apply bg-primary/25 text-foreground;
   }
+
+  /* Headings wrap to even line lengths instead of leaving one orphaned word;
+     body copy avoids a single-word last line. Two declarations, no layout
+     shift, and they do more for how the text reads than another font would. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  /* Honour the OS "reduce motion" setting. Nothing here carries meaning except
+     the progress spinner, so everything else collapses to an instant state
+     change rather than being removed outright — removing a transition mid-flight
+     leaves elements stranded in their starting state. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    /* A spinner is the one animation that carries information: frozen, it reads
+       as "hung" rather than "calm". Slow it down instead of stopping it. */
+    .animate-spin {
+      animation-duration: 1.6s !important;
+      animation-iteration-count: infinite !important;
+    }
+
+    html {
+      scroll-behavior: auto !important;
+    }
+  }
 }
