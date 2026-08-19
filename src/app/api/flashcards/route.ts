@@ -1,53 +1,43 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readJson, readQuery, withUser } from "@/lib/api";
 import {
   createFlashcard,
   generateFlashcardsForTopic,
   getFlashcardsByTopic,
 } from "@/services/flashcards/flashcardService";
 
-export async function GET(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const TopicQuery = z.object({ topicId: z.string().min(1) });
 
-  const { searchParams } = new URL(request.url);
-  const topicId = searchParams.get("topicId");
-  if (!topicId)
-    return NextResponse.json({ error: "topicId required" }, { status: 400 });
+/**
+ * Either generate a deck for a topic or add one card by hand. The two shapes
+ * are a union rather than a bag of optional fields so that a malformed
+ * hand-written card can't silently fall through to the generator.
+ */
+const BodySchema = z.union([
+  z.object({
+    action: z.literal("generate"),
+    topicId: z.string().min(1),
+    count: z.number().int().min(1).max(50).default(6),
+  }),
+  z.object({
+    action: z.literal("create").optional(),
+    topicId: z.string().min(1),
+    front: z.string().min(1).max(2000),
+    back: z.string().min(1).max(4000),
+  }),
+]);
 
-  const cards = await getFlashcardsByTopic(topicId, user.id);
-  return NextResponse.json(cards);
-}
+export const GET = withUser(async ({ request, user }) => {
+  const { topicId } = readQuery(request, TopicQuery);
+  return getFlashcardsByTopic(topicId, user.id);
+});
 
-export async function POST(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await request.json();
-  if (!body.topicId)
-    return NextResponse.json({ error: "topicId required" }, { status: 400 });
+export const POST = withUser(async ({ request, user }) => {
+  const body = await readJson(request, BodySchema);
 
   if (body.action === "generate") {
-    const cards = await generateFlashcardsForTopic(
-      body.topicId,
-      user.id,
-      body.count ?? 6
-    );
-    return NextResponse.json(cards);
+    return generateFlashcardsForTopic(body.topicId, user.id, body.count);
   }
 
-  if (!body.front || !body.back) {
-    return NextResponse.json(
-      { error: "front and back are required" },
-      { status: 400 }
-    );
-  }
-
-  const card = await createFlashcard(
-    body.topicId,
-    user.id,
-    body.front,
-    body.back
-  );
-  return NextResponse.json(card);
-}
+  return createFlashcard(body.topicId, user.id, body.front, body.back);
+});

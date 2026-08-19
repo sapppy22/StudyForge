@@ -1,23 +1,16 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readJson, withUser } from "@/lib/api";
 import {
   getUnreadNotifications,
   markNotificationRead,
 } from "@/services/notifications/notificationService";
 
-export async function GET() {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const MarkReadSchema = z.object({ id: z.string().min(1) });
 
-  const notifications = await getUnreadNotifications(user.id);
-  return NextResponse.json(notifications);
-}
+export const GET = withUser(async ({ user }) => getUnreadNotifications(user.id));
 
-export async function PATCH(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await request.json();
-  await markNotificationRead(body.id, user.id);
-  return NextResponse.json({ ok: true });
-}
+export const PATCH = withUser(async ({ request, user }) => {
+  const { id } = await readJson(request, MarkReadSchema);
+  await markNotificationRead(id, user.id);
+  return { ok: true };
+});

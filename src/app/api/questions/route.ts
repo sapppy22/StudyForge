@@ -1,16 +1,10 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readQuery, withUser } from "@/lib/api";
 import { getQuestionsByTopic } from "@/services/questions/questionService";
 
-export async function GET(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const TopicQuery = z.object({ topicId: z.string().min(1) });
 
-  const { searchParams } = new URL(request.url);
-  const topicId = searchParams.get("topicId");
-  if (!topicId)
-    return NextResponse.json({ error: "topicId required" }, { status: 400 });
-
-  const questions = await getQuestionsByTopic(topicId, user.id);
-  return NextResponse.json(questions);
-}
+export const GET = withUser(async ({ request, user }) => {
+  const { topicId } = readQuery(request, TopicQuery);
+  return getQuestionsByTopic(topicId, user.id);
+});

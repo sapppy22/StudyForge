@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
 import * as z from "zod";
-import { getApiUser } from "@/lib/session";
+import { readJson, withUser } from "@/lib/api";
 import {
   recordTime,
   saveNotes,
@@ -16,23 +15,9 @@ const PatchSchema = z.object({
   elapsedSec: z.number().int().min(0).max(21600).optional(),
 });
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ questionId: string }> }
-) {
-  const { questionId } = await params;
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const parsed = PatchSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid body", details: z.flattenError(parsed.error).fieldErrors },
-      { status: 400 }
-    );
-  }
-
-  const { solved, bookmarked, notes, elapsedSec } = parsed.data;
+export const PATCH = withUser<{ questionId: string }>(async ({ request, params, user }) => {
+  const { solved, bookmarked, notes, elapsedSec } = await readJson(request, PatchSchema);
+  const { questionId } = params;
 
   // `setSolved` already banks the elapsed time, so only record it separately
   // when the user stopped the timer without ticking the question off.
@@ -49,5 +34,5 @@ export async function PATCH(
     await saveNotes(user.id, questionId, notes);
   }
 
-  return NextResponse.json({ ok: true });
-}
+  return { ok: true };
+});

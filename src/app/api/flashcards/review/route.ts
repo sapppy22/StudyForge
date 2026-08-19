@@ -1,24 +1,14 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
-import { reviewFlashcard } from "@/services/flashcards/flashcardService";
+import * as z from "zod";
 import { Rating } from "@prisma/client";
+import { readJson, withUser } from "@/lib/api";
+import { reviewFlashcard } from "@/services/flashcards/flashcardService";
 
-export async function POST(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const ReviewSchema = z.object({
+  flashcardId: z.string().min(1),
+  rating: z.enum(Rating),
+});
 
-  const body = await request.json();
-  if (!body.flashcardId || !body.rating) {
-    return NextResponse.json(
-      { error: "flashcardId and rating are required" },
-      { status: 400 }
-    );
-  }
-
-  const review = await reviewFlashcard(
-    body.flashcardId,
-    user.id,
-    body.rating as Rating
-  );
-  return NextResponse.json(review);
-}
+export const POST = withUser(async ({ request, user }) => {
+  const { flashcardId, rating } = await readJson(request, ReviewSchema);
+  return reviewFlashcard(flashcardId, user.id, rating);
+});

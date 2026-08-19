@@ -1,11 +1,7 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import { withUser } from "@/lib/api";
 import { getDueFlashcards } from "@/services/flashcards/flashcardService";
 
-export async function GET() {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withUser(async ({ user }) => {
   const cards = await getDueFlashcards(user.id);
-  return NextResponse.json({ dueToday: cards.length, cards });
-}
+  return { dueToday: cards.length, cards };
+});

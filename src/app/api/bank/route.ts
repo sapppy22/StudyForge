@@ -1,50 +1,34 @@
-import { NextResponse } from "next/server";
+import * as z from "zod";
 import { Difficulty, ExamType } from "@prisma/client";
-import { getApiUser } from "@/lib/session";
+import { readQuery, withUser } from "@/lib/api";
 import {
   getBankStats,
   getBankTaxonomy,
   listBankQuestions,
-  type BankFilterStatus,
 } from "@/services/bank/bankService";
 
-const STATUSES: BankFilterStatus[] = ["all", "solved", "unsolved", "bookmarked"];
+const Query = z.object({
+  examType: z.enum(ExamType).default(ExamType.JEE_MAIN),
+  difficulty: z.enum(Difficulty).optional(),
+  // An unrecognised status falls back to "all" rather than rejecting: it only
+  // narrows a listing, so a stale bookmark in someone's URL bar shouldn't 400.
+  status: z.enum(["all", "solved", "unsolved", "bookmarked"]).catch("all"),
+  subject: z.string().min(1).optional(),
+  chapter: z.string().min(1).optional(),
+  search: z
+    .string()
+    .transform((value) => value.trim() || undefined)
+    .optional(),
+});
 
-export async function GET(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { searchParams } = new URL(request.url);
-
-  const examParam = searchParams.get("examType") ?? "JEE_MAIN";
-  if (!(examParam in ExamType)) {
-    return NextResponse.json({ error: "Unknown examType" }, { status: 400 });
-  }
-  const examType = examParam as ExamType;
-
-  const difficultyParam = searchParams.get("difficulty");
-  if (difficultyParam && !(difficultyParam in Difficulty)) {
-    return NextResponse.json({ error: "Unknown difficulty" }, { status: 400 });
-  }
-
-  const statusParam = searchParams.get("status") ?? "all";
-  const status = (STATUSES as string[]).includes(statusParam)
-    ? (statusParam as BankFilterStatus)
-    : "all";
+export const GET = withUser(async ({ request, user }) => {
+  const filters = readQuery(request, Query);
 
   const [questions, taxonomy, stats] = await Promise.all([
-    listBankQuestions({
-      userId: user.id,
-      examType,
-      subject: searchParams.get("subject") ?? undefined,
-      chapter: searchParams.get("chapter") ?? undefined,
-      difficulty: (difficultyParam as Difficulty | null) ?? undefined,
-      status,
-      search: searchParams.get("search")?.trim() || undefined,
-    }),
-    getBankTaxonomy(examType),
-    getBankStats(user.id, examType),
+    listBankQuestions({ userId: user.id, ...filters }),
+    getBankTaxonomy(filters.examType),
+    getBankStats(user.id, filters.examType),
   ]);
 
-  return NextResponse.json({ questions, taxonomy, stats });
-}
+  return { questions, taxonomy, stats };
+});

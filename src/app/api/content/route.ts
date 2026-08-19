@@ -1,45 +1,29 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { ContentType } from "@prisma/client";
+import { readJson, readQuery, withUser } from "@/lib/api";
 import {
   createContentItem,
   getContentItemsByTopic,
 } from "@/services/content/contentService";
-import { ContentType } from "@prisma/client";
 
-export async function GET(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const TopicQuery = z.object({ topicId: z.string().min(1) });
 
-  const { searchParams } = new URL(request.url);
-  const topicId = searchParams.get("topicId");
-  if (!topicId)
-    return NextResponse.json({ error: "topicId required" }, { status: 400 });
+const CreateSchema = z.object({
+  topicId: z.string().min(1),
+  type: z.enum(ContentType),
+  title: z.string().min(1).max(300),
+  sourceUrl: z.url().optional(),
+  rawText: z.string().optional(),
+  chunks: z.array(z.unknown()).optional(),
+  metadata: z.unknown().optional(),
+});
 
-  const items = await getContentItemsByTopic(topicId, user.id);
-  return NextResponse.json(items);
-}
+export const GET = withUser(async ({ request, user }) => {
+  const { topicId } = readQuery(request, TopicQuery);
+  return getContentItemsByTopic(topicId, user.id);
+});
 
-export async function POST(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await request.json();
-  if (!body.topicId || !body.type || !body.title) {
-    return NextResponse.json(
-      { error: "topicId, type and title are required" },
-      { status: 400 }
-    );
-  }
-
-  const item = await createContentItem({
-    topicId: body.topicId,
-    userId: user.id,
-    type: body.type as ContentType,
-    title: body.title,
-    sourceUrl: body.sourceUrl,
-    rawText: body.rawText,
-    chunks: body.chunks,
-    metadata: body.metadata,
-  });
-  return NextResponse.json(item);
-}
+export const POST = withUser(async ({ request, user }) => {
+  const body = await readJson(request, CreateSchema);
+  return createContentItem({ ...body, userId: user.id });
+});
