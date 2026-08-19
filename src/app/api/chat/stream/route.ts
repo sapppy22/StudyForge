@@ -51,7 +51,8 @@ export const POST = withUser(async ({ request, user }) => {
             controller.enqueue(encoder.encode(event.delta.text));
           }
         }
-      } catch {
+      } catch (err) {
+        console.error("[chat/stream] Groq streaming error:", err);
         if (!full) {
           full = await tutorReply(history, context);
           controller.enqueue(encoder.encode(full));

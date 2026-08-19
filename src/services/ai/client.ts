@@ -10,7 +10,7 @@ import { isAiConfigured } from "@/lib/env";
  * without any external credentials.
  */
 
-export const AI_MODEL = "llama-3.3-70b-versatile";
+export const AI_MODEL = "openai/gpt-oss-120b";
 
 /**
  * @deprecated Kept for API compatibility; Groq models do not expose an effort

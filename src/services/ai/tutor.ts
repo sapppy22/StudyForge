@@ -42,7 +42,8 @@ export async function tutorReply(
         messages: history,
         maxTokens: 1536,
       });
-    } catch {
+    } catch (err) {
+      console.error("[tutor] Groq API error, falling back to offline reply:", err);
       // fall through
     }
   }
