@@ -150,13 +150,35 @@ export async function claimGuestProfile(user: User): Promise<boolean> {
 }
 
 /**
+ * Upserts the profile, but never turns a write failure into an auth failure.
+ *
+ * Whether the profile row could be written says nothing about whether the
+ * session is valid, and letting the failure propagate was actively harmful:
+ * `requireUser()` runs in the dashboard *layout*, and an error thrown from a
+ * layout bypasses that segment's own `error.tsx` and falls all the way through
+ * to Next's default page. With the database unreachable, every signed-in screen
+ * rendered as a blank document.
+ *
+ * Swallowing it here lets the shell render and pushes the failure down to the
+ * page's own queries, where the error boundary can actually catch it and the
+ * user keeps their navigation.
+ */
+async function ensureProfileBestEffort(user: User): Promise<void> {
+  try {
+    await ensureProfile(user);
+  } catch (error) {
+    console.error("[session] could not upsert profile for", user.id, error);
+  }
+}
+
+/**
  * For Server Components / pages: returns the user (redirecting to /login when
  * unauthenticated) and guarantees their profile row exists.
  */
 export async function requireUser(): Promise<User> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  await ensureProfile(user);
+  await ensureProfileBestEffort(user);
   return user;
 }
 
@@ -167,6 +189,6 @@ export async function requireUser(): Promise<User> {
 export async function getApiUser(): Promise<User | null> {
   const user = await getSessionUser();
   if (!user) return null;
-  await ensureProfile(user);
+  await ensureProfileBestEffort(user);
   return user;
 }

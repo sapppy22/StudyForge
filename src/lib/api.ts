@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import * as z from "zod";
 import type { User } from "@supabase/supabase-js";
 import { getApiUser } from "@/lib/session";
-import { InvalidStateError, NotFoundError } from "@/lib/errors";
+import {
+  InvalidStateError,
+  NotFoundError,
+  isDatabaseUnavailable,
+} from "@/lib/errors";
 
 /**
  * Shared plumbing for Route Handlers.
@@ -72,7 +76,6 @@ function translateError(error: unknown): { status: number; message: string; extr
   }
 
   const code = (error as { code?: unknown } | null)?.code;
-  const raw = error instanceof Error ? error.message : "";
 
   // Prisma's known request errors. P2025 is "record not found", P2002 a unique
   // constraint, P2003 a foreign key — all caller-visible conditions rather than
@@ -83,13 +86,7 @@ function translateError(error: unknown): { status: number; message: string; extr
     return { status: 409, message: "That references something which no longer exists." };
   }
 
-  if (
-    code === "P1000" ||
-    code === "P1001" ||
-    code === "P1002" ||
-    code === "P1017" ||
-    /authentication failed|can't reach database|connection closed/i.test(raw)
-  ) {
+  if (isDatabaseUnavailable(error)) {
     return { status: 503, message: "The database is unavailable. Try again shortly." };
   }
 

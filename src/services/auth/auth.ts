@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import * as z from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { claimGuestProfile, ensureProfile } from "@/lib/session";
+import { isDatabaseAuthFailure, isDatabaseUnreachable } from "@/lib/errors";
 import {
   APP_URL,
   enabledOAuthProviders,
@@ -56,33 +57,24 @@ function friendlyAuthError(message: string): string {
 }
 
 /**
- * Prisma reports setup problems as connection error codes rather than messages
- * worth showing verbatim. Name the ones a deployment actually hits so the
- * banner points at the thing to go and fix.
+ * Why a guest session could not be started, in words that name the thing to go
+ * and fix. Uses the shared database classifiers so this and the API error
+ * translator always agree about what a given failure means.
  */
 function guestSetupError(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  const message = error instanceof Error ? error.message : "";
-
-  // Connecting through Supabase's Supavisor pooler surfaces a bad password as a
-  // raw "SASL authentication failed" with no Prisma error code attached, so the
-  // message has to be matched as well as the code.
-  if (code === "P1000" || /authentication failed|password authentication/i.test(message)) {
+  if (isDatabaseAuthFailure(error)) {
     return "Couldn't start a guest session — the database rejected its credentials. Check the password in DATABASE_URL.";
   }
-
-  switch (code) {
-    case "P1000":
-      return "Couldn't start a guest session — the database rejected its credentials. Check the password in DATABASE_URL.";
-    case "P1001":
-    case "P1002":
-      return "Couldn't start a guest session — the database is unreachable. Try again in a moment.";
-    case "P2021":
-    case "P2022":
-      return "Couldn't start a guest session — the database schema is out of date. Run the Prisma migrations.";
-    default:
-      return "Couldn't start a guest session. Check the server logs for the underlying error.";
+  if (isDatabaseUnreachable(error)) {
+    return "Couldn't start a guest session — the database is unreachable. Try again in a moment.";
   }
+
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "P2021" || code === "P2022") {
+    return "Couldn't start a guest session — the database schema is out of date. Run the Prisma migrations.";
+  }
+
+  return "Couldn't start a guest session. Check the server logs for the underlying error.";
 }
 
 /** Only allow same-origin relative paths as post-login destinations. */

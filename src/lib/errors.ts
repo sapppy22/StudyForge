@@ -23,3 +23,46 @@ export class InvalidStateError extends Error {
     this.name = "InvalidStateError";
   }
 }
+
+/**
+ * Classifying a Prisma failure.
+ *
+ * The error surface differs by how the database is reached: connecting direct
+ * gives a tidy `P1000`/`P1001` code, while going through Supabase's Supavisor
+ * pooler reports the same conditions as bare messages with no code attached.
+ * Both call sites that care — the API error translator and the guest sign-in
+ * action — need the same answer, so the rules live here rather than being
+ * written twice and drifting.
+ */
+function errorParts(error: unknown): { code: string; message: string } {
+  const code = (error as { code?: unknown } | null)?.code;
+  return {
+    code: typeof code === "string" ? code : "",
+    message: error instanceof Error ? error.message : "",
+  };
+}
+
+/** The credentials in DATABASE_URL were rejected. */
+export function isDatabaseAuthFailure(error: unknown): boolean {
+  const { code, message } = errorParts(error);
+  return (
+    code === "P1000" ||
+    /authentication failed|password authentication|SASL authentication/i.test(message)
+  );
+}
+
+/** The database could not be reached, or dropped the connection. */
+export function isDatabaseUnreachable(error: unknown): boolean {
+  const { code, message } = errorParts(error);
+  return (
+    code === "P1001" ||
+    code === "P1002" ||
+    code === "P1017" ||
+    /can't reach database|connection closed|connection refused|timed out/i.test(message)
+  );
+}
+
+/** Either of the above — the database is unusable, whatever the reason. */
+export function isDatabaseUnavailable(error: unknown): boolean {
+  return isDatabaseAuthFailure(error) || isDatabaseUnreachable(error);
+}
