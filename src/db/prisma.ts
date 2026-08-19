@@ -21,13 +21,19 @@ export async function findSimilarChunks(
   const rows = await prisma.$queryRawUnsafe<
     { id: string; raw_text: string | null; similarity: number }[]
   >(
+    // The similarity floor is a row-level predicate, so it belongs in WHERE.
+    // As HAVING it made Postgres treat the query as a single aggregate group
+    // and reject `embedding` for not appearing in a GROUP BY, so this never
+    // returned a row. The casts keep the parameter types unambiguous.
     `
     SELECT id, raw_text, 1 - (embedding <=> $1::vector) AS similarity
     FROM content_items
-    WHERE topic_id = $2 AND user_id = $3 AND embedding IS NOT NULL
-    HAVING 1 - (embedding <=> $1::vector) >= $4
+    WHERE topic_id = $2
+      AND user_id = $3
+      AND embedding IS NOT NULL
+      AND 1 - (embedding <=> $1::vector) >= $4::float8
     ORDER BY embedding <=> $1::vector
-    LIMIT $5
+    LIMIT $5::int
     `,
     vectorLiteral,
     topicId,
