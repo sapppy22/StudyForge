@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
@@ -33,7 +34,7 @@ export function isGuestUser(user: User | null | undefined): boolean {
  *
  * A real Supabase session always wins over a lingering guest cookie.
  */
-export async function getSessionUser(): Promise<User | null> {
+export const getSessionUser = cache(async (): Promise<User | null> => {
   try {
     const supabase = await createClient();
     const {
@@ -47,10 +48,14 @@ export async function getSessionUser(): Promise<User | null> {
 
   const guestId = await readGuestId();
   return guestId ? guestUser(guestId) : null;
-}
+});
 
-/** Upserts the Prisma profile row for a user (idempotent). */
-export async function ensureProfile(user: User) {
+/**
+ * The profile columns derived from a Supabase (or guest) user. Pure — split out
+ * so the upsert below can be memoised on primitives rather than on the identity
+ * of the `User` object, which differs between call sites.
+ */
+function profileFieldsFor(user: User) {
   const guest = isGuestUser(user);
   const email = user.email ?? (guest ? guestEmail(user.id) : `${user.id}@studyforge.local`);
   const name =
@@ -63,11 +68,35 @@ export async function ensureProfile(user: User) {
     (user.user_metadata?.picture as string | undefined) ??
     null;
 
-  return prisma.profile.upsert({
-    where: { id: user.id },
-    update: { email },
-    create: { id: user.id, email, name, avatarUrl },
-  });
+  return { email, name, avatarUrl };
+}
+
+/**
+ * Per-request memo of the profile upsert.
+ *
+ * `requireUser()` runs in the dashboard layout *and* again in the page that
+ * layout wraps, so without this every navigation wrote the same row twice.
+ * React's `cache()` is scoped to a single request, so the upsert still happens
+ * once per request — just not once per call site.
+ */
+const upsertProfile = cache(
+  async (
+    id: string,
+    email: string,
+    name: string | null,
+    avatarUrl: string | null
+  ) =>
+    prisma.profile.upsert({
+      where: { id },
+      update: { email },
+      create: { id, email, name, avatarUrl },
+    })
+);
+
+/** Upserts the Prisma profile row for a user (idempotent). */
+export async function ensureProfile(user: User) {
+  const { email, name, avatarUrl } = profileFieldsFor(user);
+  return upsertProfile(user.id, email, name, avatarUrl);
 }
 
 /**
