@@ -1,18 +1,12 @@
-import { NextResponse } from "next/server";
-import { getApiUser, isGuestUser } from "@/lib/session";
+import { forbidden, withUser } from "@/lib/api";
+import { isGuestUser } from "@/lib/session";
 import { sendQuizDigestEmail } from "@/services/email/emailService";
 import { APP_URL } from "@/lib/env";
 
-export async function POST() {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const POST = withUser(async ({ user }) => {
   // Guests have no deliverable address — say so instead of pretending to send.
   if (isGuestUser(user)) {
-    return NextResponse.json(
-      { error: "Create an account to receive email reports." },
-      { status: 403 }
-    );
+    throw forbidden("Create an account to receive email reports.");
   }
 
   const result = await sendQuizDigestEmail(
@@ -41,5 +35,5 @@ export async function POST() {
     user.id
   );
 
-  return NextResponse.json({ success: true, result });
-}
+  return { success: true, result };
+});

@@ -1,15 +1,11 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
-import { listAvailableSimulations } from "@/services/simulations/simulationService";
+import * as z from "zod";
 import { ExamType } from "@prisma/client";
+import { readQuery, withUser } from "@/lib/api";
+import { listAvailableSimulations } from "@/services/simulations/simulationService";
 
-export async function GET(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const Query = z.object({ examType: z.enum(ExamType).optional() });
 
-  const url = new URL(request.url);
-  const examType = url.searchParams.get("examType") as ExamType | null;
-
-  const simulations = await listAvailableSimulations(examType || undefined);
-  return NextResponse.json(simulations);
-}
+export const GET = withUser(async ({ request }) => {
+  const { examType } = readQuery(request, Query);
+  return listAvailableSimulations(examType);
+});

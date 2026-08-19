@@ -1,42 +1,38 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readJson, withUser } from "@/lib/api";
 import {
   createChatSession,
   getChatSessions,
   postChatMessage,
 } from "@/services/chat/chatService";
 
-export async function GET() {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+/**
+ * Opening a session and posting into one are different requests sharing a
+ * verb, so they're a union: a message missing its `content` can no longer be
+ * read as a session-create with a stray field.
+ */
+const BodySchema = z.union([
+  z.object({
+    action: z.literal("create"),
+    title: z.string().min(1).max(200).optional(),
+    goalId: z.string().min(1).optional(),
+    topicId: z.string().min(1).optional(),
+  }),
+  z.object({
+    action: z.literal("message").optional(),
+    sessionId: z.string().min(1),
+    content: z.string().min(1).max(10000),
+  }),
+]);
 
-  const sessions = await getChatSessions(user.id);
-  return NextResponse.json(sessions);
-}
+export const GET = withUser(async ({ user }) => getChatSessions(user.id));
 
-export async function POST(request: Request) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await request.json();
+export const POST = withUser(async ({ request, user }) => {
+  const body = await readJson(request, BodySchema);
 
   if (body.action === "create") {
-    const session = await createChatSession(
-      user.id,
-      body.title,
-      body.goalId,
-      body.topicId
-    );
-    return NextResponse.json(session);
+    return createChatSession(user.id, body.title, body.goalId, body.topicId);
   }
 
-  if (!body.sessionId || !body.content) {
-    return NextResponse.json(
-      { error: "sessionId and content are required" },
-      { status: 400 }
-    );
-  }
-
-  const message = await postChatMessage(body.sessionId, user.id, body.content);
-  return NextResponse.json(message);
-}
+  return postChatMessage(body.sessionId, user.id, body.content);
+});

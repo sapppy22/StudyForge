@@ -1,4 +1,5 @@
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readJson, withUser } from "@/lib/api";
 import {
   prepareTutorTurn,
   saveAssistantMessage,
@@ -6,22 +7,21 @@ import {
 import { buildTutorSystem, tutorReply } from "@/services/ai/tutor";
 import { streamText, isAiConfigured } from "@/services/ai/client";
 
-export async function POST(request: Request) {
-  const user = await getApiUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+const BodySchema = z.object({
+  sessionId: z.string().min(1),
+  content: z.string().min(1).max(10000),
+});
 
-  const body = await request.json();
-  if (!body.sessionId || !body.content) {
-    return new Response("sessionId and content are required", { status: 400 });
-  }
+export const POST = withUser(async ({ request, user }) => {
+  const body = await readJson(request, BodySchema);
 
-  let turn;
-  try {
-    turn = await prepareTutorTurn(body.sessionId, user.id, body.content);
-  } catch {
-    return new Response("Session not found", { status: 404 });
-  }
-  const { history, context } = turn;
+  // A session that isn't the caller's throws NotFoundError, which the wrapper
+  // turns into a 404 before any of the streaming machinery is set up.
+  const { history, context } = await prepareTutorTurn(
+    body.sessionId,
+    user.id,
+    body.content
+  );
   const encoder = new TextEncoder();
 
   // No API key → send the deterministic fallback as a single chunk.
@@ -73,4 +73,4 @@ export async function POST(request: Request) {
       "Cache-Control": "no-cache, no-transform",
     },
   });
-}
+});

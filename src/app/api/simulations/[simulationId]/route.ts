@@ -1,20 +1,8 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import { notFound, withUser } from "@/lib/api";
 import { getSimulationDetails } from "@/services/simulations/simulationService";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ simulationId: string }> }
-) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { simulationId } = await params;
-  const sim = await getSimulationDetails(simulationId);
-
-  if (!sim) {
-    return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(sim);
-}
+export const GET = withUser<{ simulationId: string }>(async ({ params }) => {
+  const sim = await getSimulationDetails(params.simulationId);
+  if (!sim) throw notFound("Simulation not found");
+  return sim;
+});

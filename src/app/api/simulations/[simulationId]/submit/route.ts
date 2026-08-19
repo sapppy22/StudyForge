@@ -1,36 +1,40 @@
-import { NextResponse } from "next/server";
-import { getApiUser } from "@/lib/session";
+import * as z from "zod";
+import { readJson, withUser } from "@/lib/api";
 import { gradeAndSubmitSimulation } from "@/services/simulations/simulationService";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ simulationId: string }> }
-) {
-  const user = await getApiUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const SubmitSchema = z.object({
+  answers: z
+    .array(
+      z.object({
+        questionId: z.string().min(1),
+        response: z.string().max(20000),
+        timeSpentSec: z.number().int().min(0).max(21600).optional(),
+      })
+    )
+    .default([]),
+  timeSpentSec: z.number().int().min(0).max(86400).default(0),
+  proctoringViolations: z
+    .array(
+      z.object({
+        timestamp: z.string(),
+        type: z.enum(["tab_switch", "window_blur", "fullscreen_exit", "shortcut_blocked"]),
+        details: z.string().max(500),
+      })
+    )
+    .default([]),
+});
 
-  const { simulationId } = await params;
-  const body = await request.json();
+export const POST = withUser<{ simulationId: string }>(async ({ request, params, user }) => {
+  const body = await readJson(request, SubmitSchema);
 
-  const { answers, timeSpentSec, proctoringViolations } = body;
-
-  try {
-    const result = await gradeAndSubmitSimulation({
-      simulationId,
-      userId: user.id,
-      userEmail: user.email ?? "student@studyforge.app",
-      userName: (user.user_metadata?.name as string | undefined) ?? user.email?.split("@")[0] ?? "Student",
-      answers: answers || [],
-      timeSpentSec: timeSpentSec || 0,
-      proctoringViolations: proctoringViolations || [],
-    });
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("[SimulationSubmit] Error grading simulation:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to grade simulation" },
-      { status: 500 }
-    );
-  }
-}
+  return gradeAndSubmitSimulation({
+    simulationId: params.simulationId,
+    userId: user.id,
+    userEmail: user.email ?? "student@studyforge.app",
+    userName:
+      (user.user_metadata?.name as string | undefined) ??
+      user.email?.split("@")[0] ??
+      "Student",
+    ...body,
+  });
+});
