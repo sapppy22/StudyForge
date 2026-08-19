@@ -55,6 +55,28 @@ function friendlyAuthError(message: string): string {
   return message;
 }
 
+/**
+ * Prisma reports setup problems as connection error codes rather than messages
+ * worth showing verbatim. Name the ones a deployment actually hits so the
+ * banner points at the thing to go and fix.
+ */
+function guestSetupError(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+
+  switch (code) {
+    case "P1000":
+      return "Couldn't start a guest session — the database rejected its credentials. Check the password in DATABASE_URL.";
+    case "P1001":
+    case "P1002":
+      return "Couldn't start a guest session — the database is unreachable. Try again in a moment.";
+    case "P2021":
+    case "P2022":
+      return "Couldn't start a guest session — the database schema is out of date. Run the Prisma migrations.";
+    default:
+      return "Couldn't start a guest session. Check the server logs for the underlying error.";
+  }
+}
+
 /** Only allow same-origin relative paths as post-login destinations. */
 function safeNext(next: string | null | undefined): string {
   if (!next || !next.startsWith("/") || next.startsWith("//")) return "/dashboard";
@@ -222,10 +244,13 @@ export async function continueAsGuest(next?: string): Promise<AuthFormState> {
   try {
     id = await startGuestSession();
     await ensureProfile(guestUser(id));
-  } catch {
-    return fail(
-      "Couldn't start a guest session — the database is unreachable. Try again in a moment."
-    );
+  } catch (error) {
+    // The profile upsert is the only database write in this path, so a failure
+    // here is nearly always deployment configuration rather than anything the
+    // visitor did. Log the underlying error: without it every misconfiguration
+    // reaches the user as the same unhelpful banner.
+    console.error("[guest] could not start session:", error);
+    return fail(guestSetupError(error));
   }
 
   redirect(safeNext(next));
