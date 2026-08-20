@@ -137,7 +137,12 @@ export async function getGoalsByUser(userId: string) {
         include: {
           children: {
             include: {
-              children: true,
+              // Proficiency is recomputed per *leaf* topic (that is what
+              // questions hang off), so leaving it off this level meant the
+              // dashboard's overall progress was averaged over subjects and
+              // chapters that never carry a score — always 0% — and every
+              // topic chip rendered with the grey "unassessed" dot.
+              children: { include: { proficiencyScores: { where: { userId } } } },
               proficiencyScores: { where: { userId } },
             },
           },
@@ -157,7 +162,12 @@ export async function getGoalById(goalId: string, userId: string) {
         include: {
           children: {
             include: {
-              children: true,
+              // Proficiency is recomputed per *leaf* topic (that is what
+              // questions hang off), so leaving it off this level meant the
+              // dashboard's overall progress was averaged over subjects and
+              // chapters that never carry a score — always 0% — and every
+              // topic chip rendered with the grey "unassessed" dot.
+              children: { include: { proficiencyScores: { where: { userId } } } },
               proficiencyScores: { where: { userId } },
             },
           },
