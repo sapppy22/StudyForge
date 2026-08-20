@@ -37,7 +37,11 @@ export function QuestionRow({
   const [expanded, setExpanded] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [showHint, setShowHint] = useState(false);
+  /** Local only — the sheet is self-checked, so nothing is submitted. */
+  const [choice, setChoice] = useState<string | null>(null);
 
+  const options = question.options ?? null;
+  const isObjective = Boolean(options?.length);
   const progress = question.progress[0];
   const solved = progress?.solved ?? false;
   const bookmarked = progress?.bookmarked ?? false;
@@ -80,6 +84,9 @@ export function QuestionRow({
               {question.chapter}
               {question.topic && ` · ${question.topic}`}
             </span>
+            <Badge variant="secondary" className="text-[10px] capitalize">
+              {question.type.replace(/_/g, " ")}
+            </Badge>
             <span className="text-xs text-muted-foreground">
               · target {question.expectedMinutes}m
             </span>
@@ -114,6 +121,48 @@ export function QuestionRow({
 
           {expanded && (
             <div className="mt-3 space-y-3">
+              {isObjective && (
+                <div className="space-y-1.5">
+                  {options!.map((option) => {
+                    const picked = choice === option.label;
+                    // Revealed only once the solution is, so the sheet stays a
+                    // test rather than a multiple-guess.
+                    const isKey =
+                      showSolution && question.correctAnswer?.trim().toUpperCase() === option.label;
+                    return (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={() => setChoice(picked ? null : option.label)}
+                        className={cn(
+                          "flex w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                          isKey
+                            ? "border-primary bg-primary/10"
+                            : picked
+                              ? "border-foreground/40 bg-accent"
+                              : "hover:bg-accent/50"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold",
+                            (isKey || picked) && "border-primary bg-primary text-primary-foreground"
+                          )}
+                        >
+                          {option.label}
+                        </span>
+                        <MathText>{option.text}</MathText>
+                      </button>
+                    );
+                  })}
+                  {choice && !showSolution && (
+                    <p className="text-xs text-muted-foreground">
+                      Answer noted — reveal the solution to check it.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {question.hint && (
                 <div>
                   {showHint ? (

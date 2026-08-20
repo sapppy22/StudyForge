@@ -18,6 +18,8 @@ export interface BankRow {
   difficulty: "easy" | "medium" | "hard";
   type: string;
   content: string;
+  /** Present on objective questions; null for written work. */
+  options: { label: string; text: string }[] | null;
   correctAnswer: string | null;
   solution: string | null;
   hint: string | null;
@@ -33,6 +35,7 @@ export interface BankStats {
   solved: number;
   byDifficulty: { easy: number; medium: number; hard: number };
   totalByDifficulty: { easy: number; medium: number; hard: number };
+  byKind: { objective: number; subjective: number };
   bySubject: { subject: string; total: number; solved: number }[];
   totalTimeSec: number;
 }

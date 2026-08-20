@@ -22,13 +22,6 @@ import { formatDuration, useSolveTimer } from "./use-solve-timer";
 import type { BankProgressRow, BankResponse, BankRow } from "./types";
 import { ListChecks, Loader2, Search } from "lucide-react";
 
-const EXAMS = [
-  { value: "JEE_MAIN", label: "JEE Main" },
-  { value: "JEE_ADVANCED", label: "JEE Advanced" },
-  { value: "NEET", label: "NEET" },
-  { value: "SSC_CGL", label: "SSC CGL" },
-];
-
 const STATUSES = [
   { value: "all", label: "All" },
   { value: "unsolved", label: "Unsolved" },
@@ -36,13 +29,33 @@ const STATUSES = [
   { value: "bookmarked", label: "Bookmarked" },
 ];
 
+/**
+ * Objective questions are answered by picking an option; subjective ones are
+ * worked on paper. Students sit down to do one or the other, so it is a filter
+ * rather than a mixed list.
+ */
+const KINDS = [
+  { value: "all", label: "Everything" },
+  { value: "objective", label: "Objective" },
+  { value: "subjective", label: "Written" },
+];
+
 const ANY = "__any__";
 
-export function QuestionBank({ sources }: { sources: { label: string; url: string }[] }) {
-  const [examType, setExamType] = useState("JEE_MAIN");
+export function QuestionBank({
+  exams,
+  defaultExam,
+  sources,
+}: {
+  exams: { value: string; label: string }[];
+  defaultExam: string;
+  sources: { label: string; url: string }[];
+}) {
+  const [examType, setExamType] = useState(defaultExam);
   const [subject, setSubject] = useState(ANY);
   const [difficulty, setDifficulty] = useState(ANY);
   const [status, setStatus] = useState("all");
+  const [kind, setKind] = useState("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -55,14 +68,14 @@ export function QuestionBank({ sources }: { sources: { label: string; url: strin
   }, [search]);
 
   const queryKey = useMemo(
-    () => ["bank", examType, subject, difficulty, status, debouncedSearch],
-    [examType, subject, difficulty, status, debouncedSearch]
+    () => ["bank", examType, subject, difficulty, status, kind, debouncedSearch],
+    [examType, subject, difficulty, status, kind, debouncedSearch]
   );
 
   const { data, isPending, isFetching } = useQuery<BankResponse>({
     queryKey,
     queryFn: async () => {
-      const params = new URLSearchParams({ examType, status });
+      const params = new URLSearchParams({ examType, status, kind });
       if (subject !== ANY) params.set("subject", subject);
       if (difficulty !== ANY) params.set("difficulty", difficulty);
       if (debouncedSearch) params.set("search", debouncedSearch);
@@ -195,9 +208,9 @@ export function QuestionBank({ sources }: { sources: { label: string; url: strin
 
   return (
     <div className="space-y-5">
-      <Tabs value={examType} onValueChange={(v) => changeExam(v ?? "JEE_MAIN")}>
-        <TabsList>
-          {EXAMS.map((exam) => (
+      <Tabs value={examType} onValueChange={(v) => changeExam(v ?? defaultExam)}>
+        <TabsList className="flex-wrap">
+          {exams.map((exam) => (
             <TabsTrigger key={exam.value} value={exam.value}>
               {exam.label}
             </TabsTrigger>
@@ -222,6 +235,9 @@ export function QuestionBank({ sources }: { sources: { label: string; url: strin
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">
+                  {stats.byKind.objective} objective · {stats.byKind.subjective} written
+                </Badge>
                 {(["easy", "medium", "hard"] as const).map((level) => (
                   <Badge key={level} variant="secondary" className="capitalize">
                     {level} {stats.byDifficulty[level]}/
@@ -283,6 +299,24 @@ export function QuestionBank({ sources }: { sources: { label: string; url: strin
             <SelectItem value="hard">Hard</SelectItem>
           </SelectContent>
         </Select>
+
+        <div className="flex rounded-lg border p-0.5">
+          {KINDS.map((k) => (
+            <button
+              key={k.value}
+              type="button"
+              onClick={() => setKind(k.value)}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                kind === k.value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
 
         <div className="flex rounded-lg border p-0.5">
           {STATUSES.map((s) => (

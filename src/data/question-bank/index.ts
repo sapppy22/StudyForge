@@ -2,6 +2,7 @@ import type { BankSeed, BankSource } from "./types";
 import { jeeBank } from "./jee";
 import { neetBank } from "./neet";
 import { sscBank } from "./ssc";
+import { objectiveBank } from "./objective";
 
 /**
  * The curated question bank, in seed order.
@@ -10,7 +11,12 @@ import { sscBank } from "./ssc";
  * first, so working straight down the sheet covers the most marks per hour. The
  * `orderIndex` written to the database is simply the position here.
  */
-export const questionBank: BankSeed[] = [...jeeBank, ...neetBank, ...sscBank];
+export const questionBank: BankSeed[] = [
+  ...jeeBank,
+  ...neetBank,
+  ...sscBank,
+  ...objectiveBank,
+];
 
 /**
  * Where the taxonomy and ordering came from. Surfaced in the UI so a student can
@@ -49,12 +55,12 @@ export const bankSources: BankSource[] = [
   },
 ];
 
-/** Exams that have a curated sheet, in the order they should be offered. */
-export const BANK_EXAMS = [
-  "JEE_MAIN",
-  "JEE_ADVANCED",
-  "NEET",
-  "SSC_CGL",
-] as const;
+/**
+ * Exams that have a curated sheet, derived from the seeds themselves so
+ * adding questions for a new exam surfaces its tab without a second edit.
+ */
+export const BANK_EXAMS = Array.from(
+  new Set(questionBank.map((seed) => seed.examType))
+);
 
 export type { BankSeed, BankSource };

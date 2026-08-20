@@ -13,6 +13,7 @@ const Query = z.object({
   // An unrecognised status falls back to "all" rather than rejecting: it only
   // narrows a listing, so a stale bookmark in someone's URL bar shouldn't 400.
   status: z.enum(["all", "solved", "unsolved", "bookmarked"]).catch("all"),
+  kind: z.enum(["all", "objective", "subjective"]).catch("all"),
   subject: z.string().min(1).optional(),
   chapter: z.string().min(1).optional(),
   search: z

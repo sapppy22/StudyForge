@@ -1,5 +1,5 @@
 import { prisma } from "@/db/prisma";
-import type { Difficulty, ExamType, Prisma } from "@prisma/client";
+import { Prisma, QuestionType, type Difficulty, type ExamType } from "@prisma/client";
 import { questionBank } from "@/data/question-bank";
 
 /**
@@ -13,6 +13,27 @@ import { questionBank } from "@/data/question-bank";
 
 export type BankFilterStatus = "all" | "solved" | "unsolved" | "bookmarked";
 
+/**
+ * Objective questions are answered by picking an option; subjective ones are
+ * worked on paper and self-checked. They are different kinds of practice and
+ * students reach for one or the other deliberately, so the sheet filters on it.
+ */
+export type BankFilterKind = "all" | "objective" | "subjective";
+
+const OBJECTIVE_TYPES: QuestionType[] = [
+  QuestionType.mcq,
+  QuestionType.msq,
+  QuestionType.numeric,
+  QuestionType.assertion_reason,
+];
+
+const SUBJECTIVE_TYPES: QuestionType[] = [
+  QuestionType.short_answer,
+  QuestionType.long_answer,
+  QuestionType.derivation,
+  QuestionType.proof,
+];
+
 export interface BankQuery {
   userId: string;
   examType: ExamType;
@@ -20,6 +41,7 @@ export interface BankQuery {
   chapter?: string;
   difficulty?: Difficulty;
   status?: BankFilterStatus;
+  kind?: BankFilterKind;
   search?: string;
 }
 
@@ -34,6 +56,7 @@ export async function seedQuestionBank() {
     type: seed.type,
     difficulty: seed.difficulty,
     content: seed.content,
+    options: (seed.options as Prisma.InputJsonValue) ?? Prisma.JsonNull,
     correctAnswer: seed.correctAnswer ?? null,
     solution: seed.solution ?? null,
     hint: seed.hint ?? null,
@@ -55,16 +78,21 @@ export async function seedQuestionBank() {
 /**
  * Seeds on first use so a fresh database is never an empty sheet.
  *
- * Cached per process: the check is a cheap count, but the seed itself is ~90
- * upserts and must not run on every request. A cold serverless instance will
- * re-run the count once, which is fine.
+ * The trigger is "fewer rows than seeds", not "no rows at all". Seeding only an
+ * empty table meant every question added to a seed file after the first deploy
+ * was invisible to existing databases — the objective sheet would simply never
+ * have appeared. `createMany` with `skipDuplicates` makes re-running free.
+ *
+ * Cached per process: the check is a cheap count, but the seed itself is a
+ * hundred-odd inserts and must not run on every request. A cold serverless
+ * instance will re-run the count once, which is fine.
  */
 let seedPromise: Promise<void> | null = null;
 
 export function ensureBankSeeded(): Promise<void> {
   seedPromise ??= (async () => {
     const count = await prisma.bankQuestion.count();
-    if (count === 0) await seedQuestionBank();
+    if (count < questionBank.length) await seedQuestionBank();
   })().catch((error) => {
     // Don't cache a failure — the next request should retry.
     seedPromise = null;
@@ -87,6 +115,8 @@ export async function listBankQuestions(query: BankQuery) {
   if (query.subject) and.push({ subject: query.subject });
   if (query.chapter) and.push({ chapter: query.chapter });
   if (query.difficulty) and.push({ difficulty: query.difficulty });
+  if (query.kind === "objective") and.push({ type: { in: OBJECTIVE_TYPES } });
+  if (query.kind === "subjective") and.push({ type: { in: SUBJECTIVE_TYPES } });
 
   if (query.search) {
     and.push({
@@ -148,7 +178,7 @@ export async function getBankStats(userId: string, examType: ExamType) {
   const [questions, solvedRows] = await Promise.all([
     prisma.bankQuestion.findMany({
       where: { examType },
-      select: { id: true, difficulty: true, subject: true },
+      select: { id: true, difficulty: true, subject: true, type: true },
     }),
     prisma.bankProgress.findMany({
       where: { userId, solved: true, question: { examType } },
@@ -164,10 +194,13 @@ export async function getBankStats(userId: string, examType: ExamType) {
   const solvedIds = new Set(solvedRows.map((r) => r.questionId));
   const byDifficulty = { easy: 0, medium: 0, hard: 0 };
   const totalByDifficulty = { easy: 0, medium: 0, hard: 0 };
+  const byKind = { objective: 0, subjective: 0 };
   const bySubject = new Map<string, { total: number; solved: number }>();
 
   for (const q of questions) {
     totalByDifficulty[q.difficulty] += 1;
+    if (OBJECTIVE_TYPES.includes(q.type)) byKind.objective += 1;
+    else byKind.subjective += 1;
     const entry = bySubject.get(q.subject) ?? { total: 0, solved: 0 };
     entry.total += 1;
     if (solvedIds.has(q.id)) {
@@ -184,6 +217,7 @@ export async function getBankStats(userId: string, examType: ExamType) {
     solved: solvedIds.size,
     byDifficulty,
     totalByDifficulty,
+    byKind,
     bySubject: Array.from(bySubject, ([subject, v]) => ({ subject, ...v })),
     totalTimeSec,
   };
