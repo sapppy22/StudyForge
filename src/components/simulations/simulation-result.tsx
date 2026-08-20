@@ -8,6 +8,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { MathText } from "@/components/shared/math-text";
+import {
+  MissedToFlashcards,
+  type MissedItem,
+} from "@/components/flashcards/missed-to-cards";
 import type { SimulationAttemptResult } from "@/data/simulations/types";
 import {
   CheckCircle2,
@@ -35,6 +39,18 @@ export function SimulationResult({ result, onRetake }: SimulationResultProps) {
   const [emailSent, setEmailSent] = useState(false);
 
   const isClean = result.proctoringViolations.length === 0;
+
+  // A mock paper's questions have no Question row to reference, so their text
+  // travels with the request instead of an id.
+  const missed: MissedItem[] = result.questionResults
+    .filter((q) => !q.isCorrect)
+    .map((q) => ({
+      topicTitle: q.chapter,
+      content: q.content,
+      correctAnswer: q.correctAnswer,
+      yourAnswer: q.userResponse || null,
+      explanation: q.solution,
+    }));
 
   const filteredQuestions = result.questionResults.filter((q) => {
     if (filter === "correct") return q.isCorrect;
@@ -253,6 +269,8 @@ export function SimulationResult({ result, onRetake }: SimulationResultProps) {
             </button>
           </div>
         </div>
+
+        <MissedToFlashcards missed={missed} />
 
         {/* Question Cards List */}
         <div className="space-y-4">

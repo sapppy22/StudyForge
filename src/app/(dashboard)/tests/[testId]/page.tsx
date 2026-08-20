@@ -13,6 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { MathText } from "@/components/shared/math-text";
 import {
+  MissedToFlashcards,
+  type MissedItem,
+} from "@/components/flashcards/missed-to-cards";
+import {
   claimExamStart,
   clearExamStart,
   formatClock,
@@ -41,6 +45,7 @@ import type { ProctoringViolation } from "@/data/simulations/types";
 
 interface QuizQuestion {
   id: string;
+  topicId?: string | null;
   type: string;
   difficulty: string;
   content: string;
@@ -202,6 +207,19 @@ export default function TestPage() {
   if (shown) {
     const pct =
       shown.maxScore > 0 ? Math.round(((shown.score ?? 0) / shown.maxScore) * 100) : 0;
+
+    // Unanswered counts as missed: not knowing where to start is a bigger gap
+    // than getting it wrong, not a smaller one.
+    const missed: MissedItem[] = shown.answers
+      .filter((a) => a.isCorrect !== true)
+      .map((a) => ({
+        questionId: a.question.id,
+        topicId: a.question.topicId ?? null,
+        content: a.question.content,
+        correctAnswer: a.question.correctAnswer,
+        yourAnswer: a.response || null,
+        explanation: a.question.explanation,
+      }));
     return (
       <div className="mx-auto max-w-3xl space-y-5">
         <div className="flex items-center justify-between">
@@ -242,6 +260,8 @@ export default function TestPage() {
             <p className="text-sm text-muted-foreground">{pct}% correct</p>
           </CardContent>
         </Card>
+
+        <MissedToFlashcards missed={missed} />
 
         <div className="space-y-3">
           {shown.answers.map((a, i) => {

@@ -14,7 +14,9 @@ interface DueCard {
   id: string;
   front: string;
   back: string;
-  topic: { id: string; title: string };
+  /** Null on cards made from a mock paper, which has no syllabus topic. */
+  topic: { id: string; title: string } | null;
+  source: string;
 }
 
 const ratings = [
@@ -157,8 +159,15 @@ export default function FlashcardsPage() {
         <span>
           Card {index + 1} of {queue.length}
         </span>
-        <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
-          {card.topic.title}
+        <span className="flex items-center gap-1.5">
+          {card.source === "from_missed_question" && (
+            <span className="rounded-full bg-chart-5/15 px-2.5 py-0.5 text-xs font-medium text-chart-5">
+              From a mistake
+            </span>
+          )}
+          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
+            {card.topic?.title ?? "Mock paper"}
+          </span>
         </span>
       </div>
       <Progress value={progress} className="h-1.5" />

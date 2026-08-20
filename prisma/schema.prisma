@@ -102,6 +102,8 @@ enum AttemptStatus {
 enum FlashcardSource {
   auto_from_notes
   manual
+  /// Created from a question the student got wrong, to close that specific gap.
+  from_missed_question
 }
 
 enum Rating {
@@ -635,7 +637,8 @@ model Answer {
 
 model Flashcard {
   id         String          @id @default(uuid())
-  topicId    String          @map("topic_id")
+  /// Null for cards made from a mock paper, which has no syllabus topic.
+  topicId    String?         @map("topic_id")
   userId     String          @map("user_id")
   front      String
   back       String
@@ -652,7 +655,7 @@ model Flashcard {
   createdAt  DateTime        @default(now()) @map("created_at")
   updatedAt  DateTime        @updatedAt @map("updated_at")
 
-  topic    SyllabusTopic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topic    SyllabusTopic?    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   user     Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviews  FlashcardReview[]
 

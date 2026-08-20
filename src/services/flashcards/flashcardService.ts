@@ -2,7 +2,11 @@ import { prisma } from "@/db/prisma";
 import { Prisma, Rating as DbRating, FlashcardSource } from "@prisma/client";
 import { createEmptyCard, fsrs, type Card, type Grade } from "ts-fsrs";
 import { retrieveNotes } from "@/services/ai/retrieval";
-import { generateFlashcards } from "@/services/ai/flashcards";
+import {
+  generateFlashcards,
+  generateRevisionCards,
+  type MissedQuestion,
+} from "@/services/ai/flashcards";
 import { NotFoundError } from "@/lib/errors";
 
 const f = fsrs();
@@ -35,11 +39,12 @@ function deserializeCard(json: unknown): Card {
 }
 
 export async function createFlashcard(
-  topicId: string,
+  topicId: string | null,
   userId: string,
   front: string,
   back: string,
-  source: FlashcardSource = FlashcardSource.manual
+  source: FlashcardSource = FlashcardSource.manual,
+  metadata?: Prisma.InputJsonValue
 ) {
   const card = createEmptyCard(new Date()); // due = now → immediately reviewable
   return prisma.flashcard.create({
@@ -49,12 +54,131 @@ export async function createFlashcard(
       front,
       back,
       source,
+      metadata,
       due: card.due,
       fsrsState: serializeCard(card),
       reps: card.reps,
       lapses: card.lapses,
     },
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Revision cards from mistakes                                               */
+/* -------------------------------------------------------------------------- */
+
+export interface MissedQuestionInput {
+  /** The graded question — set for a quiz answer, absent for a mock paper. */
+  questionId?: string;
+  topicId?: string | null;
+  content: string;
+  correctAnswer?: string | null;
+  yourAnswer?: string | null;
+  explanation?: string | null;
+  topicTitle?: string | null;
+}
+
+/**
+ * Turns chosen mistakes into revision cards.
+ *
+ * Chosen, not automatic: a student knows which of their wrong answers was a
+ * slip and which was a hole, and burying the holes under a pile of cards for
+ * arithmetic errors is how a review queue stops being worth opening. The
+ * caller picks; this schedules what they picked.
+ *
+ * Cards go in due immediately, because the whole point is to close the gap
+ * while the mistake is still fresh.
+ */
+export async function createRevisionCards(
+  userId: string,
+  missed: MissedQuestionInput[]
+) {
+  if (missed.length === 0) return [];
+
+  // A question already turned into a card must not spawn a second one when the
+  // student opens the same scorecard again. Filtered in memory rather than with
+  // a JSON-path query: the set is one user's revision cards, and the equivalent
+  // `IN` over a JSON field is not expressible in Prisma.
+  const questionIds = missed.map((m) => m.questionId).filter(Boolean) as string[];
+  const existing = questionIds.length
+    ? await prisma.flashcard.findMany({
+        where: { userId, source: FlashcardSource.from_missed_question },
+        select: { metadata: true },
+      })
+    : [];
+
+  const alreadyCarded = new Set(
+    existing
+      .map((row) => (row.metadata as { questionId?: string } | null)?.questionId)
+      .filter(Boolean) as string[]
+  );
+
+  const pending = missed.filter(
+    (m) => !m.questionId || !alreadyCarded.has(m.questionId)
+  );
+  if (pending.length === 0) return [];
+
+  const cards = await generateRevisionCards(
+    pending.map(
+      (m): MissedQuestion => ({
+        content: m.content,
+        correctAnswer: m.correctAnswer,
+        yourAnswer: m.yourAnswer,
+        explanation: m.explanation,
+        topicTitle: m.topicTitle,
+      })
+    )
+  );
+
+  const created = [];
+  for (const [index, card] of cards.entries()) {
+    const origin = pending[index];
+    created.push(
+      await createFlashcard(
+        origin?.topicId ?? null,
+        userId,
+        card.front,
+        card.back,
+        FlashcardSource.from_missed_question,
+        {
+          questionId: origin?.questionId ?? null,
+          originalQuestion: origin?.content ?? null,
+          yourAnswer: origin?.yourAnswer ?? null,
+        } as Prisma.InputJsonValue
+      )
+    );
+  }
+  return created;
+}
+
+/**
+ * The wrong answers on a graded attempt, ready to be turned into cards.
+ *
+ * Unanswered questions count as missed — not knowing where to start is a
+ * bigger gap than getting it wrong, not a smaller one.
+ */
+export async function getMissedFromAttempt(attemptId: string, userId: string) {
+  const attempt = await prisma.testAttempt.findFirst({
+    where: { id: attemptId, userId },
+    include: {
+      answers: {
+        include: { question: { include: { topic: { select: { id: true, title: true } } } } },
+      },
+    },
+  });
+  if (!attempt) throw new NotFoundError("Attempt not found");
+
+  return attempt.answers
+    .filter((answer) => answer.isCorrect !== true)
+    .map((answer) => ({
+      questionId: answer.questionId,
+      topicId: answer.question.topicId,
+      topicTitle: answer.question.topic?.title ?? null,
+      content: answer.question.content,
+      correctAnswer: answer.question.correctAnswer,
+      yourAnswer: answer.response || null,
+      explanation: answer.question.explanation,
+    }));
 }
 
 /** Cards whose scheduled `due` time has passed (includes brand-new cards). */
