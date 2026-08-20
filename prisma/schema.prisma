@@ -130,12 +130,70 @@ enum StudyPlanStatus {
   archived
 }
 
+/** How long a mock or quiz should run. */
+enum TestDurationMode {
+  /// The exam board's published duration for that paper.
+  official
+  /// A fixed number of minutes the student chose.
+  custom
+  /// Derived from the question count and a per-question budget.
+  per_question
+}
+
 /** What a scheduled block asks the student to actually do. */
 enum StudyTaskKind {
   learn
   practice
   revise
   test
+}
+
+/**
+ * Per-student exam preferences.
+ *
+ * Timing is the reason this table exists. A mock is only useful under the real
+ * clock, but "the real clock" is not the same thing for everyone: a student two
+ * weeks out wants the full 180 minutes, one squeezing practice into a lunch
+ * break wants 45, and someone drilling speed wants a tighter budget than the
+ * board allows. Rather than hardcode one of those, the duration is resolved at
+ * test-start time from these settings, falling back to the published pattern.
+ *
+ * One row per user, created on first read so nothing has to seed it.
+ */
+model UserSettings {
+  id     String @id @default(uuid())
+  userId String @unique @map("user_id")
+
+  /// How the clock for a full mock is decided.
+  testDurationMode  TestDurationMode @default(official) @map("test_duration_mode")
+  /// Minutes, used when the mode is `custom`.
+  customTestMinutes Int              @default(60) @map("custom_test_minutes")
+  /// Seconds per question, used when the mode is `per_question`.
+  secondsPerQuestion Int             @default(90) @map("seconds_per_question")
+  /// Per-exam minute overrides keyed by ExamType, e.g. {"JEE_MAIN": 120}.
+  examDurations     Json?            @map("exam_durations")
+
+  /// Quizzes are short and optional-timer by default; mocks always run a clock.
+  quizTimerEnabled       Boolean @default(true) @map("quiz_timer_enabled")
+  quizSecondsPerQuestion Int     @default(90) @map("quiz_seconds_per_question")
+
+  /// The real CBT submits for you when the clock hits zero.
+  autoSubmitOnTimeUp Boolean @default(true) @map("auto_submit_on_time_up")
+  showTimer          Boolean @default(true) @map("show_timer")
+  /// Minutes remaining at which the clock starts warning.
+  warnAtMinutes      Int     @default(5) @map("warn_at_minutes")
+  /// Honour per-section limits (CAT, IBPS PO) rather than one pooled clock.
+  enforceSectionalTiming Boolean @default(true) @map("enforce_sectional_timing")
+
+  proctoringEnabled      Boolean @default(true) @map("proctoring_enabled")
+  negativeMarkingEnabled Boolean @default(true) @map("negative_marking_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
 }
 
 model Profile {
@@ -159,6 +217,7 @@ model Profile {
   bankProgress        BankProgress[]
   mindMaps            MindMap[]
   studyPlans          StudyPlan[]
+  settings            UserSettings?
 
   @@map("profiles")
 }
