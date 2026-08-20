@@ -59,6 +59,7 @@ export interface SimulationQuestion {
   difficulty: Difficulty;
   content: string;
   options?: { label: string; text: string }[];
+  /** Comma-separated for multi-select questions, e.g. "A,C". */
   correctAnswer: string;
   solution: string;
   hint?: string;
@@ -66,6 +67,10 @@ export interface SimulationQuestion {
   negativeMarks: number;
   year?: number;
   tags?: string[];
+  /** Which part of the section this came from, e.g. "Section B — Numerical". */
+  partLabel?: string;
+  /** Set when the item was written by the model rather than curated. */
+  generated?: boolean;
 }
 
 export interface SimulationMock {
@@ -80,6 +85,8 @@ export interface SimulationMock {
   sections: ExamSectionConfig[];
   questions: SimulationQuestion[];
   instructions: string[];
+  /** Mirrors the pattern: each section runs on its own clock. */
+  sectionalTiming?: boolean;
 }
 
 export interface ProctoringViolation {

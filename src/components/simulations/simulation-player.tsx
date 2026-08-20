@@ -1,16 +1,28 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { QuestionType } from "@prisma/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ProctoringGuard } from "./proctoring-guard";
 import { MathText } from "@/components/shared/math-text";
+import {
+  claimExamStart,
+  clearExamStart,
+  formatClock,
+  useExamClock,
+  useQuestionTimer,
+  useSectionClocks,
+} from "@/components/exam/use-exam-clock";
+import type { TestPreferences } from "@/lib/test-timing";
 import type {
   SimulationMock,
   SimulationAttemptResult,
+  SimulationQuestion,
   ProctoringViolation,
 } from "@/data/simulations/types";
 import {
@@ -24,30 +36,51 @@ import {
   Maximize2,
   FileText,
   AlertCircle,
+  Lock,
   Loader2,
+  EyeOff,
 } from "lucide-react";
 
 interface SimulationPlayerProps {
   simulation: SimulationMock;
   user: { id: string; email: string; name?: string | null };
+  /** Resolved clock for this paper, in minutes. */
+  durationMinutes: number;
+  preferences: TestPreferences;
   onComplete: (result: SimulationAttemptResult) => void;
 }
 
 type QuestionStatus = "not_visited" | "not_answered" | "answered" | "marked" | "answered_marked";
 
+const MULTI_SELECT = QuestionType.msq;
+const WRITTEN_TYPES: QuestionType[] = [QuestionType.short_answer, QuestionType.long_answer];
+
+function typeLabel(question: SimulationQuestion | undefined): string {
+  switch (question?.type) {
+    case QuestionType.numeric:
+      return "Numerical answer";
+    case QuestionType.msq:
+      return "One or more correct";
+    case QuestionType.short_answer:
+      return "Short answer";
+    case QuestionType.long_answer:
+      return "Written answer";
+    default:
+      return "Single choice";
+  }
+}
+
 export function SimulationPlayer({
   simulation,
   user,
+  durationMinutes,
+  preferences,
   onComplete,
 }: SimulationPlayerProps) {
-
-  // Active state
   const [activeSectionId, setActiveSectionId] = useState(simulation.sections[0]?.id || "");
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
 
-  // Response tracking: map questionId -> response string
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  // Status tracking: map questionId -> QuestionStatus (lazy initial state)
   const [statuses, setStatuses] = useState<Record<string, QuestionStatus>>(() => {
     const initStatuses: Record<string, QuestionStatus> = {};
     simulation.questions.forEach((q) => {
@@ -58,61 +91,48 @@ export function SimulationPlayer({
     }
     return initStatuses;
   });
-  // Time spent per question: map questionId -> seconds
-  const [questionTimeMap, setQuestionTimeMap] = useState<Record<string, number>>({});
 
-  // Proctoring violations
   const [violations, setViolations] = useState<ProctoringViolation[]>([]);
-  const [proctoringActive, setProctoringActive] = useState(false);
-
-  // Overall timer (countdown in seconds)
-  const totalSeconds = simulation.durationMinutes * 60;
-  const [timeLeft, setTimeLeft] = useState(totalSeconds);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showPaperModal, setShowPaperModal] = useState(false);
 
-  // Questions in current active section
-  const sectionQuestions = useMemo(() => {
-    return simulation.questions.filter((q) => q.sectionId === activeSectionId);
-  }, [simulation.questions, activeSectionId]);
+  const proctoringActive = startedAt !== null;
+  const totalSeconds = durationMinutes * 60;
+  // Two students can hold different clocks for the same paper, so the length is
+  // part of the key: changing it in Settings starts a fresh clock rather than
+  // resuming one measured against the old duration.
+  const clockKey = `${simulation.id}:${durationMinutes}`;
 
+  const sectionQuestions = useMemo(
+    () => simulation.questions.filter((q) => q.sectionId === activeSectionId),
+    [simulation.questions, activeSectionId]
+  );
   const currentQuestion = sectionQuestions[activeQuestionIndex] || simulation.questions[0];
 
-  // Start exam & request fullscreen
-  const startExam = useCallback(async () => {
-    try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-      }
-    } catch {
-      // ignore
-    }
-    setProctoringActive(true);
-  }, []);
+  const { snapshot: questionTimes } = useQuestionTimer(
+    currentQuestion?.id,
+    proctoringActive && !isSubmitting
+  );
 
-  // Format seconds to HH:MM:SS
-  const formatTime = (secs: number) => {
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  };
+  const submittedRef = useRef(false);
 
-  // Submit test
   const handleSubmitTest = useCallback(async () => {
-    if (isSubmitting) return;
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     setIsSubmitting(true);
 
-    const totalTimeSpent = totalSeconds - timeLeft;
+    const perQuestion = questionTimes();
+    const elapsed = Object.values(perQuestion).reduce((sum, n) => sum + n, 0);
 
     const payload = {
       answers: Object.entries(answers).map(([questionId, response]) => ({
         questionId,
         response,
-        timeSpentSec: questionTimeMap[questionId] || 0,
+        timeSpentSec: perQuestion[questionId] || 0,
       })),
-      timeSpentSec: totalTimeSpent,
+      timeSpentSec: Math.min(elapsed, totalSeconds),
       proctoringViolations: violations,
     };
 
@@ -122,88 +142,111 @@ export function SimulationPlayer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        throw new Error("Submission failed");
-      }
-
+      if (!res.ok) throw new Error("Submission failed");
       const result: SimulationAttemptResult = await res.json();
 
-      // Exit fullscreen
       if (document.fullscreenElement) {
         await document.exitFullscreen().catch(() => {});
       }
-
+      // The paper is over, so the persisted clock has to go or a retake would
+      // resume the finished one.
+      clearExamStart(clockKey);
       onComplete(result);
     } catch (err) {
       console.error("Failed to submit simulation:", err);
+      submittedRef.current = false;
       setIsSubmitting(false);
     }
-  }, [isSubmitting, totalSeconds, timeLeft, answers, questionTimeMap, violations, simulation.id, onComplete]);
+  }, [answers, violations, questionTimes, simulation.id, totalSeconds, clockKey, onComplete]);
 
-  const submitRef = useRef(handleSubmitTest);
+  const onExpire = useCallback(() => {
+    if (preferences.autoSubmitOnTimeUp) void handleSubmitTest();
+  }, [preferences.autoSubmitOnTimeUp, handleSubmitTest]);
 
-  useEffect(() => {
-    submitRef.current = handleSubmitTest;
-  }, [handleSubmitTest]);
+  const clock = useExamClock({
+    durationSec: totalSeconds,
+    startedAt,
+    onExpire,
+  });
 
-  // Main countdown timer
-  useEffect(() => {
-    if (!proctoringActive) return;
+  const sectionalEnabled =
+    Boolean(simulation.sectionalTiming) && preferences.enforceSectionalTiming;
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          submitRef.current();
-          return 0;
-        }
-        return prev - 1;
-      });
+  const sectionClocks = useSectionClocks({
+    sections: simulation.sections,
+    activeSectionId,
+    enabled: sectionalEnabled,
+    storageKey: simulation.id,
+  });
 
-      // Track time on active question
-      if (currentQuestion) {
-        setQuestionTimeMap((prev) => ({
-          ...prev,
-          [currentQuestion.id]: (prev[currentQuestion.id] || 0) + 1,
-        }));
+  const lockedSections = sectionClocks.lockedSectionIds;
+  const currentSectionLocked = lockedSections.includes(activeSectionId);
+  const timeUp = clock.expired;
+  const answeringDisabled = currentSectionLocked || (timeUp && preferences.autoSubmitOnTimeUp);
+
+  /** Every path that changes section also has to start that section's clock. */
+  const goToSection = useCallback(
+    (sectionId: string) => {
+      setActiveSectionId(sectionId);
+      setActiveQuestionIndex(0);
+      sectionClocks.enterSection(sectionId);
+    },
+    [sectionClocks]
+  );
+
+  const startExam = useCallback(async () => {
+    try {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
       }
-    }, 1000);
+    } catch {
+      // Fullscreen can be refused (an iframe, a policy); the paper still runs.
+    }
+    // Resumes the stored start when this paper was already under way.
+    setStartedAt(claimExamStart(clockKey));
+    sectionClocks.enterSection(activeSectionId);
+  }, [clockKey, sectionClocks, activeSectionId]);
 
-    return () => clearInterval(timer);
-  }, [proctoringActive, currentQuestion]);
+  /* ---------------------------------------------------------------------- */
+  /*  Answering                                                              */
+  /* ---------------------------------------------------------------------- */
 
-  // Actions on current question
-  const selectOption = (optLabel: string) => {
-    if (!currentQuestion) return;
-    const newAnswers = { ...answers, [currentQuestion.id]: optLabel };
-    setAnswers(newAnswers);
-    setStatuses((prev) => ({
-      ...prev,
-      [currentQuestion.id]: prev[currentQuestion.id] === "marked" ? "answered_marked" : "answered",
-    }));
+  const setAnswer = (value: string) => {
+    if (!currentQuestion || answeringDisabled) return;
+    setAnswers((prev) => {
+      const next = { ...prev };
+      if (value.trim().length === 0) delete next[currentQuestion.id];
+      else next[currentQuestion.id] = value;
+      return next;
+    });
+    setStatuses((prev) => {
+      const wasMarked = prev[currentQuestion.id]?.includes("marked");
+      const answered = value.trim().length > 0;
+      return {
+        ...prev,
+        [currentQuestion.id]: answered
+          ? wasMarked
+            ? "answered_marked"
+            : "answered"
+          : wasMarked
+            ? "marked"
+            : "not_answered",
+      };
+    });
   };
 
-  const handleNumericalInput = (val: string) => {
+  /** MSQ answers are stored as a sorted, comma-joined label list. */
+  const toggleMultiOption = (label: string) => {
     if (!currentQuestion) return;
-    const newAnswers = { ...answers, [currentQuestion.id]: val };
-    setAnswers(newAnswers);
-    setStatuses((prev) => ({
-      ...prev,
-      [currentQuestion.id]: val.trim().length > 0 ? "answered" : "not_answered",
-    }));
+    const selected = new Set(
+      (answers[currentQuestion.id] ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    );
+    if (selected.has(label)) selected.delete(label);
+    else selected.add(label);
+    setAnswer(Array.from(selected).sort().join(","));
   };
 
-  const clearResponse = () => {
-    if (!currentQuestion) return;
-    const newAnswers = { ...answers };
-    delete newAnswers[currentQuestion.id];
-    setAnswers(newAnswers);
-    setStatuses((prev) => ({
-      ...prev,
-      [currentQuestion.id]: "not_answered",
-    }));
-  };
+  const clearResponse = () => setAnswer("");
 
   const markForReview = () => {
     if (!currentQuestion) return;
@@ -225,40 +268,39 @@ export function SimulationPlayer({
     goToNextQuestion();
   };
 
+  const visit = (questionId: string) => {
+    setStatuses((prev) =>
+      prev[questionId] === "not_visited" ? { ...prev, [questionId]: "not_answered" } : prev
+    );
+  };
+
   const goToNextQuestion = () => {
     if (activeQuestionIndex < sectionQuestions.length - 1) {
       const nextQ = sectionQuestions[activeQuestionIndex + 1];
       setActiveQuestionIndex(activeQuestionIndex + 1);
-      if (statuses[nextQ.id] === "not_visited") {
-        setStatuses((prev) => ({ ...prev, [nextQ.id]: "not_answered" }));
-      }
-    } else {
-      // Find next section if available
-      const currentSecIdx = simulation.sections.findIndex((s) => s.id === activeSectionId);
-      if (currentSecIdx < simulation.sections.length - 1) {
-        const nextSec = simulation.sections[currentSecIdx + 1];
-        setActiveSectionId(nextSec.id);
-        setActiveQuestionIndex(0);
-      }
+      visit(nextQ.id);
+      return;
     }
+    // Fall through to the next section that is still open.
+    const currentSecIdx = simulation.sections.findIndex((s) => s.id === activeSectionId);
+    const nextOpen = simulation.sections
+      .slice(currentSecIdx + 1)
+      .find((s) => !lockedSections.includes(s.id));
+    if (nextOpen) goToSection(nextOpen.id);
   };
 
   const goToPrevQuestion = () => {
-    if (activeQuestionIndex > 0) {
-      setActiveQuestionIndex(activeQuestionIndex - 1);
-    }
+    if (activeQuestionIndex > 0) setActiveQuestionIndex(activeQuestionIndex - 1);
   };
 
   const jumpToQuestion = (secId: string, qIndex: number) => {
+    if (secId !== activeSectionId) sectionClocks.enterSection(secId);
     setActiveSectionId(secId);
     setActiveQuestionIndex(qIndex);
     const targetQ = simulation.questions.filter((q) => q.sectionId === secId)[qIndex];
-    if (targetQ && statuses[targetQ.id] === "not_visited") {
-      setStatuses((prev) => ({ ...prev, [targetQ.id]: "not_answered" }));
-    }
+    if (targetQ) visit(targetQ.id);
   };
 
-  // Palette counts summary
   const summaryCounts = useMemo(() => {
     let answered = 0;
     let notAnswered = 0;
@@ -278,8 +320,12 @@ export function SimulationPlayer({
     return { answered, notAnswered, marked, answeredMarked, notVisited };
   }, [simulation.questions, statuses]);
 
-  // If exam has not started, show Pre-Exam Instructions screen
+  /* ---------------------------------------------------------------------- */
+  /*  Pre-exam instructions                                                  */
+  /* ---------------------------------------------------------------------- */
+
   if (!proctoringActive) {
+    const differsFromOfficial = durationMinutes !== simulation.durationMinutes;
     return (
       <div className="mx-auto max-w-3xl space-y-6 py-6">
         <Card className="border-emerald-500/20 bg-zinc-950">
@@ -290,15 +336,18 @@ export function SimulationPlayer({
             <CardTitle className="text-2xl font-bold tracking-tight text-white">
               {simulation.title}
             </CardTitle>
-            <p className="text-sm text-zinc-400">
-              {simulation.description}
-            </p>
+            <p className="text-sm text-zinc-400">{simulation.description}</p>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-3 gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-center">
               <div>
                 <span className="text-xs text-zinc-400 uppercase">Duration</span>
-                <p className="text-lg font-bold text-white">{simulation.durationMinutes} Mins</p>
+                <p className="text-lg font-bold text-white">{durationMinutes} Mins</p>
+                {differsFromOfficial && (
+                  <p className="text-[11px] text-amber-400">
+                    Official is {simulation.durationMinutes} — set in Settings
+                  </p>
+                )}
               </div>
               <div>
                 <span className="text-xs text-zinc-400 uppercase">Total Marks</span>
@@ -311,7 +360,9 @@ export function SimulationPlayer({
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-white">Official CBT Examination Instructions:</h3>
+              <h3 className="text-sm font-semibold text-white">
+                Official CBT Examination Instructions:
+              </h3>
               <ul className="space-y-2 text-sm text-zinc-300">
                 {simulation.instructions.map((inst, i) => (
                   <li key={i} className="flex items-start gap-2">
@@ -319,18 +370,44 @@ export function SimulationPlayer({
                     <span>{inst}</span>
                   </li>
                 ))}
+                {sectionalEnabled && (
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-500 font-bold">•</span>
+                    <span>
+                      Sectional time limits are enforced: a section locks when its
+                      own clock expires and cannot be reopened.
+                    </span>
+                  </li>
+                )}
+                {!preferences.autoSubmitOnTimeUp && (
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-500 font-bold">•</span>
+                    <span>
+                      Auto-submit is off in your settings — you&apos;ll be warned at
+                      zero but can keep working.
+                    </span>
+                  </li>
+                )}
               </ul>
             </div>
 
-            <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-4 text-sm text-rose-300">
-              <div className="flex items-center gap-2 font-semibold text-rose-400 mb-1">
-                <AlertCircle className="size-4" />
-                Anti-Cheat Proctoring Protocol Active
+            {preferences.proctoringEnabled ? (
+              <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-4 text-sm text-rose-300">
+                <div className="flex items-center gap-2 font-semibold text-rose-400 mb-1">
+                  <AlertCircle className="size-4" />
+                  Anti-Cheat Proctoring Protocol Active
+                </div>
+                <p className="text-xs text-rose-300/80">
+                  This test will launch in full screen. Any application switch, tab
+                  navigation, or window minimizing will be recorded as a violation. 3
+                  violations will trigger automatic disqualification and submission.
+                </p>
               </div>
-              <p className="text-xs text-rose-300/80">
-                This test will launch in full screen. Any application switch, tab navigation, or window minimizing will be recorded as a violation. 3 violations will trigger automatic disqualification and submission.
-              </p>
-            </div>
+            ) : (
+              <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4 text-xs text-zinc-400">
+                Proctoring is off in your settings — tab switches won&apos;t be flagged.
+              </div>
+            )}
 
             <div className="pt-2">
               <Button
@@ -339,7 +416,7 @@ export function SimulationPlayer({
                 className="w-full bg-emerald-600 font-bold text-zinc-950 hover:bg-emerald-500"
               >
                 <Maximize2 className="mr-2 size-5" />
-                I am Ready — Start Proctored Exam (Enter Fullscreen)
+                I am Ready — Start {preferences.proctoringEnabled ? "Proctored " : ""}Exam
               </Button>
             </div>
           </CardContent>
@@ -348,22 +425,31 @@ export function SimulationPlayer({
     );
   }
 
-  // Active CBT Exam Interface
+  /* ---------------------------------------------------------------------- */
+  /*  Live paper                                                             */
+  /* ---------------------------------------------------------------------- */
+
   const currentAnswer = answers[currentQuestion?.id] || "";
-  const isTimeLow = timeLeft < 300; // less than 5 minutes
+  const selectedLabels = new Set(
+    currentAnswer.split(",").map((s) => s.trim()).filter(Boolean)
+  );
+  const warnSeconds = preferences.warnAtMinutes * 60;
+  const isTimeLow = clock.remainingSec <= warnSeconds;
+  const sectionRemaining = sectionClocks.remainingSec;
+  const showSectionClock = sectionalEnabled && Number.isFinite(sectionRemaining);
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-zinc-950 text-zinc-100 select-none overflow-hidden">
-      {/* Proctoring Guard Hook */}
-      <ProctoringGuard
-        active={proctoringActive}
-        maxViolations={3}
-        violations={violations}
-        onViolation={(v) => setViolations((prev) => [...prev, v])}
-        onMaxViolationsExceeded={handleSubmitTest}
-      />
+      {preferences.proctoringEnabled && (
+        <ProctoringGuard
+          active={proctoringActive}
+          maxViolations={3}
+          violations={violations}
+          onViolation={(v) => setViolations((prev) => [...prev, v])}
+          onMaxViolationsExceeded={handleSubmitTest}
+        />
+      )}
 
-      {/* CBT Top Bar */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -374,24 +460,55 @@ export function SimulationPlayer({
               {simulation.title}
             </span>
           </div>
-          <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-xs">
-            <ShieldCheck className="mr-1 size-3" /> Proctored Mode
-          </Badge>
+          {preferences.proctoringEnabled && (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-xs"
+            >
+              <ShieldCheck className="mr-1 size-3" /> Proctored Mode
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Time Remaining Clock */}
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-lg px-3 py-1 font-mono text-base font-bold tabular-nums border",
-              isTimeLow
-                ? "border-rose-500/50 bg-rose-950/40 text-rose-400 animate-pulse"
-                : "border-zinc-700 bg-zinc-800/80 text-emerald-400"
-            )}
-          >
-            <Clock className="size-4" />
-            <span>Time Left: {formatTime(timeLeft)}</span>
-          </div>
+          {preferences.showTimer ? (
+            <div className="flex items-center gap-2">
+              {showSectionClock && (
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-sm font-bold tabular-nums",
+                    sectionRemaining <= 120
+                      ? "border-amber-500/50 bg-amber-950/40 text-amber-400"
+                      : "border-zinc-700 bg-zinc-800/80 text-zinc-200"
+                  )}
+                  title="Time left in this section"
+                >
+                  <Lock className="size-3.5" />
+                  <span>{formatClock(sectionRemaining)}</span>
+                </div>
+              )}
+              <div
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3 py-1 font-mono text-base font-bold tabular-nums border",
+                  isTimeLow
+                    ? "border-rose-500/50 bg-rose-950/40 text-rose-400 animate-pulse"
+                    : "border-zinc-700 bg-zinc-800/80 text-emerald-400"
+                )}
+                role="timer"
+                aria-live="off"
+              >
+                <Clock className="size-4" />
+                <span>Time Left: {formatClock(clock.remainingSec)}</span>
+              </div>
+            </div>
+          ) : (
+            <span
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1 text-xs text-zinc-400"
+              title="The clock is hidden in your settings but still running"
+            >
+              <EyeOff className="size-3.5" /> Clock hidden
+            </span>
+          )}
 
           <Button
             variant="outline"
@@ -412,11 +529,19 @@ export function SimulationPlayer({
         </div>
       </header>
 
-      {/* Section Selector Navigation Tabs */}
+      {timeUp && !preferences.autoSubmitOnTimeUp && (
+        <div className="shrink-0 bg-rose-600 px-4 py-1.5 text-center text-xs font-semibold text-white">
+          Time is up. In the real exam this paper would already be submitted.
+        </div>
+      )}
+
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-zinc-800 bg-zinc-900/60 px-4 overflow-x-auto">
-        <span className="text-xs font-semibold text-zinc-400 mr-2 uppercase tracking-wider">Sections:</span>
+        <span className="text-xs font-semibold text-zinc-400 mr-2 uppercase tracking-wider">
+          Sections:
+        </span>
         {simulation.sections.map((sec) => {
           const isActive = sec.id === activeSectionId;
+          const locked = lockedSections.includes(sec.id);
           const count = simulation.questions.filter((q) => q.sectionId === sec.id).length;
           const answeredInSec = simulation.questions.filter(
             (q) => q.sectionId === sec.id && answers[q.id]
@@ -426,21 +551,26 @@ export function SimulationPlayer({
             <button
               key={sec.id}
               onClick={() => {
-                setActiveSectionId(sec.id);
-                setActiveQuestionIndex(0);
+                if (locked) return;
+                goToSection(sec.id);
               }}
+              disabled={locked}
+              title={locked ? "This section's time has expired" : undefined}
               className={cn(
                 "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap",
-                isActive
-                  ? "bg-emerald-500 text-zinc-950 font-bold shadow-sm"
-                  : "bg-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                locked
+                  ? "cursor-not-allowed bg-zinc-900 text-zinc-600"
+                  : isActive
+                    ? "bg-emerald-500 text-zinc-950 font-bold shadow-sm"
+                    : "bg-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:text-white"
               )}
             >
+              {locked && <Lock className="size-3" />}
               <span>{sec.name}</span>
               <span
                 className={cn(
                   "rounded-full px-1.5 py-0.2 text-[10px]",
-                  isActive ? "bg-zinc-950 text-emerald-400" : "bg-zinc-700 text-zinc-300"
+                  isActive && !locked ? "bg-zinc-950 text-emerald-400" : "bg-zinc-700 text-zinc-300"
                 )}
               >
                 {answeredInSec}/{count}
@@ -450,75 +580,120 @@ export function SimulationPlayer({
         })}
       </div>
 
-      {/* Main Examination Viewport (Left Question Area + Right Question Palette) */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Active Question Area */}
         <div className="flex flex-1 flex-col justify-between overflow-y-auto p-4 sm:p-6">
           <div className="space-y-4 max-w-4xl mx-auto w-full">
-            {/* Question Header & Marking Scheme */}
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold text-white">
                   Question {activeQuestionIndex + 1}
                 </span>
                 <span className="text-xs text-zinc-400">
-                  (of {sectionQuestions.length} in {simulation.sections.find((s) => s.id === activeSectionId)?.name})
+                  (of {sectionQuestions.length} in{" "}
+                  {simulation.sections.find((s) => s.id === activeSectionId)?.name})
                 </span>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-                  +{currentQuestion?.marks || 4} Marks
+                <Badge
+                  variant="outline"
+                  className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                >
+                  +{currentQuestion?.marks ?? 4} Marks
                 </Badge>
-                <Badge variant="outline" className="border-rose-500/30 text-rose-400 bg-rose-500/10">
-                  -{currentQuestion?.negativeMarks || 1} Negative
-                </Badge>
+                {preferences.negativeMarkingEnabled && (currentQuestion?.negativeMarks ?? 0) > 0 && (
+                  <Badge variant="outline" className="border-rose-500/30 text-rose-400 bg-rose-500/10">
+                    -{currentQuestion?.negativeMarks} Negative
+                  </Badge>
+                )}
                 <Badge variant="secondary" className="bg-zinc-800 text-zinc-300 text-xs">
-                  {currentQuestion?.type === "numeric" ? "Numerical Input" : "Single Choice"}
+                  {currentQuestion?.partLabel ?? typeLabel(currentQuestion)}
                 </Badge>
               </div>
             </div>
 
-            {/* Question Statement */}
+            {currentSectionLocked && (
+              <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-sm text-amber-300">
+                <Lock className="size-4 shrink-0" />
+                This section&apos;s time has expired. Your answers are saved; move to
+                a section that is still open.
+              </div>
+            )}
+
             <div className="text-base sm:text-lg leading-relaxed text-zinc-100 font-normal py-2 font-sans">
               <MathText>{currentQuestion?.content}</MathText>
             </div>
 
-            {/* Options (MCQ) or Numerical Input */}
-            {currentQuestion?.type === "numeric" ? (
+            {currentQuestion?.type === QuestionType.numeric ? (
               <div className="my-6 max-w-sm rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3">
-                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                <label
+                  htmlFor="numeric-answer"
+                  className="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+                >
                   Enter Your Numerical Answer:
                 </label>
                 <Input
+                  id="numeric-answer"
                   type="text"
+                  inputMode="decimal"
                   placeholder="e.g. 24 or 3.14"
                   value={currentAnswer}
-                  onChange={(e) => handleNumericalInput(e.target.value)}
+                  disabled={answeringDisabled}
+                  onChange={(e) => setAnswer(e.target.value)}
                   className="font-mono text-lg font-bold border-zinc-700 bg-zinc-950 text-emerald-400 focus-visible:ring-emerald-500"
                 />
                 <p className="text-[11px] text-zinc-500">
                   Enter integer or decimal value. Round off to 2 decimal places if needed.
                 </p>
               </div>
+            ) : WRITTEN_TYPES.includes(currentQuestion?.type as QuestionType) ? (
+              <div className="my-4 space-y-2">
+                <Textarea
+                  value={currentAnswer}
+                  disabled={answeringDisabled}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  rows={currentQuestion?.type === QuestionType.long_answer ? 12 : 4}
+                  placeholder="Type your answer…"
+                  className="border-zinc-800 bg-zinc-900/60 text-zinc-100"
+                />
+                <p className="text-[11px] text-zinc-500 tabular-nums">
+                  {currentAnswer.trim() ? currentAnswer.trim().split(/\s+/).length : 0} words
+                </p>
+              </div>
             ) : (
               <div className="space-y-3 my-4">
+                {currentQuestion?.type === MULTI_SELECT && (
+                  <p className="text-xs text-amber-400">
+                    Select every option that applies.
+                  </p>
+                )}
                 {currentQuestion?.options?.map((opt) => {
-                  const isSelected = currentAnswer === opt.label;
+                  const isSelected =
+                    currentQuestion.type === MULTI_SELECT
+                      ? selectedLabels.has(opt.label)
+                      : currentAnswer === opt.label;
                   return (
                     <button
                       key={opt.label}
                       type="button"
-                      onClick={() => selectOption(opt.label)}
+                      disabled={answeringDisabled}
+                      aria-pressed={isSelected}
+                      onClick={() =>
+                        currentQuestion.type === MULTI_SELECT
+                          ? toggleMultiOption(opt.label)
+                          : setAnswer(opt.label)
+                      }
                       className={cn(
                         "flex w-full items-center gap-3.5 rounded-xl border p-3.5 text-left transition-all",
                         isSelected
                           ? "border-emerald-500 bg-emerald-500/10 text-white ring-1 ring-emerald-500"
-                          : "border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900"
+                          : "border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900",
+                        answeringDisabled && "cursor-not-allowed opacity-60"
                       )}
                     >
                       <span
                         className={cn(
-                          "flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
+                          "flex size-7 shrink-0 items-center justify-center border text-xs font-bold",
+                          currentQuestion.type === MULTI_SELECT ? "rounded-md" : "rounded-full",
                           isSelected
                             ? "border-emerald-500 bg-emerald-500 text-zinc-950"
                             : "border-zinc-700 bg-zinc-800 text-zinc-400"
@@ -536,7 +711,6 @@ export function SimulationPlayer({
             )}
           </div>
 
-          {/* Action Bar */}
           <div className="sticky bottom-0 border-t border-zinc-800 bg-zinc-950/90 backdrop-blur py-3 px-2">
             <div className="max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -544,7 +718,7 @@ export function SimulationPlayer({
                   variant="outline"
                   size="sm"
                   onClick={clearResponse}
-                  disabled={!currentAnswer}
+                  disabled={!currentAnswer || answeringDisabled}
                   className="border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-white text-xs"
                 >
                   <RotateCcw className="mr-1.5 size-3" /> Clear Response
@@ -555,8 +729,19 @@ export function SimulationPlayer({
                   onClick={markForReview}
                   className="border-purple-500/40 bg-purple-950/20 text-purple-300 hover:bg-purple-900/30 text-xs"
                 >
-                  <Bookmark className="mr-1.5 size-3" /> Mark for Review & Next
+                  <Bookmark className="mr-1.5 size-3" /> Mark for Review &amp; Next
                 </Button>
+                {sectionalEnabled && !currentSectionLocked && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => sectionClocks.finishSection(activeSectionId)}
+                    className="border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-white text-xs"
+                    title="End this section early and move on — you cannot come back"
+                  >
+                    <Lock className="mr-1.5 size-3" /> End section
+                  </Button>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -574,17 +759,15 @@ export function SimulationPlayer({
                   onClick={saveAndNext}
                   className="bg-emerald-600 font-bold text-zinc-950 hover:bg-emerald-500 text-xs px-5"
                 >
-                  Save & Next <ChevronRight className="ml-1 size-3.5" />
+                  Save &amp; Next <ChevronRight className="ml-1 size-3.5" />
                 </Button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right: TCS/NTA Official Question Palette */}
         <aside className="w-80 shrink-0 border-l border-zinc-800 bg-zinc-900/40 p-4 flex flex-col justify-between overflow-y-auto hidden lg:flex">
           <div>
-            {/* Palette Legend */}
             <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">
               Question Palette
             </h4>
@@ -618,11 +801,10 @@ export function SimulationPlayer({
                 <span className="size-4 rounded-sm bg-purple-600 flex items-center justify-center text-[9px] font-bold text-emerald-300 ring-1 ring-emerald-400">
                   {summaryCounts.answeredMarked}
                 </span>
-                <span>Answered & Marked for Review</span>
+                <span>Answered &amp; Marked for Review</span>
               </div>
             </div>
 
-            {/* Questions Grid for Active Section */}
             <div className="border-t border-zinc-800 pt-3">
               <span className="text-xs font-semibold text-zinc-400 mb-2 block">
                 {simulation.sections.find((s) => s.id === activeSectionId)?.name} Questions:
@@ -636,7 +818,8 @@ export function SimulationPlayer({
                   if (status === "answered") bgClass = "bg-emerald-500 text-zinc-950 font-bold";
                   else if (status === "not_answered") bgClass = "bg-rose-600 text-white font-semibold";
                   else if (status === "marked") bgClass = "bg-purple-600 text-white font-semibold";
-                  else if (status === "answered_marked") bgClass = "bg-purple-600 text-emerald-300 font-bold ring-2 ring-emerald-400";
+                  else if (status === "answered_marked")
+                    bgClass = "bg-purple-600 text-emerald-300 font-bold ring-2 ring-emerald-400";
 
                   return (
                     <button
@@ -645,7 +828,8 @@ export function SimulationPlayer({
                       className={cn(
                         "flex size-9 items-center justify-center rounded-md text-xs font-mono transition-all",
                         bgClass,
-                        isCurrent && "ring-2 ring-white scale-105 shadow-md"
+                        isCurrent && "ring-2 ring-white scale-105 shadow-md",
+                        currentSectionLocked && "opacity-50"
                       )}
                     >
                       {idx + 1}
@@ -656,7 +840,6 @@ export function SimulationPlayer({
             </div>
           </div>
 
-          {/* Bottom Candidate Info & Quick Submit */}
           <div className="border-t border-zinc-800 pt-4 mt-4 space-y-3">
             <div className="flex items-center gap-3">
               <div className="flex size-9 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-sm">
@@ -678,7 +861,6 @@ export function SimulationPlayer({
         </aside>
       </div>
 
-      {/* Submit Confirmation Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
           <Card className="w-full max-w-md border-zinc-800 bg-zinc-950 text-white">
@@ -692,11 +874,15 @@ export function SimulationPlayer({
               <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 text-xs">
                 <div className="flex justify-between">
                   <span className="text-zinc-400">Answered:</span>
-                  <span className="font-bold text-emerald-400">{summaryCounts.answered + summaryCounts.answeredMarked}</span>
+                  <span className="font-bold text-emerald-400">
+                    {summaryCounts.answered + summaryCounts.answeredMarked}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-400">Unanswered:</span>
-                  <span className="font-bold text-rose-400">{summaryCounts.notAnswered + summaryCounts.notVisited}</span>
+                  <span className="font-bold text-rose-400">
+                    {summaryCounts.notAnswered + summaryCounts.notVisited}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-400">Marked for Review:</span>
@@ -704,7 +890,7 @@ export function SimulationPlayer({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-400">Time Left:</span>
-                  <span className="font-bold text-white">{formatTime(timeLeft)}</span>
+                  <span className="font-bold text-white">{formatClock(clock.remainingSec)}</span>
                 </div>
               </div>
 
@@ -731,7 +917,6 @@ export function SimulationPlayer({
         </div>
       )}
 
-      {/* Question Paper Overview Drawer/Modal */}
       {showPaperModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
           <Card className="w-full max-w-4xl max-h-[85vh] flex flex-col border-zinc-800 bg-zinc-950 text-white">
