@@ -18,6 +18,49 @@ const OBJECTIVE_TYPES: QuestionType[] = [
   QuestionType.numeric,
 ];
 
+const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+
+/**
+ * Marks an objective answer.
+ *
+ * Numerical questions cannot be marked by string equality: a question that
+ * tells you to round to two decimals has to accept 3.14 for 3.1416, and "12.0"
+ * is the same answer as "12". Multi-select needs the whole set, order
+ * independent.
+ */
+function markObjective(
+  type: QuestionType,
+  correctAnswer: string | null,
+  response: string
+): boolean {
+  if (response.trim().length === 0) return false;
+  const expected = (correctAnswer ?? "").trim();
+  if (!expected) return false;
+
+  if (type === QuestionType.numeric) {
+    const expectedNum = Number.parseFloat(expected);
+    const actualNum = Number.parseFloat(response);
+    if (Number.isNaN(expectedNum) || Number.isNaN(actualNum)) {
+      return normalize(expected) === normalize(response);
+    }
+    const tolerance = Math.max(0.01, Math.abs(expectedNum) * 0.005);
+    return Math.abs(expectedNum - actualNum) <= tolerance;
+  }
+
+  if (type === QuestionType.msq) {
+    const toSet = (value: string) =>
+      new Set(value.split(",").map((part) => part.trim().toUpperCase()).filter(Boolean));
+    const expectedSet = toSet(expected);
+    const actualSet = toSet(response);
+    return (
+      expectedSet.size === actualSet.size &&
+      Array.from(expectedSet).every((label) => actualSet.has(label))
+    );
+  }
+
+  return normalize(expected) === normalize(response);
+}
+
 export async function startTestAttempt(testId: string, userId: string) {
   return prisma.testAttempt.create({
     data: { testId, userId, status: AttemptStatus.started },
@@ -56,9 +99,7 @@ export async function submitTestAnswers(
         answers.find((a) => a.questionId === question.id)?.response?.trim() ?? "";
 
       if (OBJECTIVE_TYPES.includes(question.type)) {
-        const expected = (question.correctAnswer ?? "").trim().toLowerCase();
-        const isCorrect =
-          response.length > 0 && response.toLowerCase() === expected;
+        const isCorrect = markObjective(question.type, question.correctAnswer, response);
         return {
           question,
           response,

@@ -5,7 +5,7 @@ export type QuestionDifficulty = "easy" | "medium" | "hard";
 
 export interface GeneratedQuestion {
   kind: "objective" | "subjective";
-  type: "mcq" | "short_answer";
+  type: "mcq" | "numeric" | "short_answer";
   difficulty: QuestionDifficulty;
   content: string;
   options?: { label: string; text: string }[];
@@ -20,9 +20,17 @@ export interface GenerateQuestionsParams {
   subjectPath?: string;
   notes: RetrievedNote[];
   objective: number;
+  /** Numerical-answer questions — the ones you actually have to work out. */
+  numeric?: number;
   subjective: number;
   difficulty: QuestionDifficulty | "adaptive";
   reason?: string;
+  /**
+   * The exam this topic is being studied for. Without it a quiz drifts into
+   * generic textbook questions; with it the model writes in that board's house
+   * style at that board's difficulty.
+   */
+  examName?: string;
 }
 
 const DIFF_CYCLE: QuestionDifficulty[] = ["easy", "medium", "hard"];
@@ -45,35 +53,55 @@ async function generateWithClaude(
 ): Promise<GeneratedQuestion[]> {
   const context = formatNotesContext(params.notes);
   const grounded = params.notes.length > 0;
+  const numeric = params.numeric ?? 0;
   const difficultyInstruction =
     params.difficulty === "adaptive"
       ? "Mix difficulties (easy, medium, hard) sensibly across the set."
       : `Target ${params.difficulty} difficulty.`;
 
   const system = [
-    "You are an expert exam-question author for StudyForge, an adaptive study platform.",
+    params.examName
+      ? `You are a senior paper-setter for ${params.examName}, writing practice questions in that exam's house style.`
+      : "You are an expert exam-question author for StudyForge, an adaptive study platform.",
     "Write accurate, unambiguous questions with exactly one correct answer for MCQs.",
-    "Ground questions in the provided notes when notes are given; otherwise use standard curriculum knowledge.",
+    // Notes are a source of grounding, not a ceiling. A quiz built only from
+    // what a student wrote down can never test what they failed to write down,
+    // which is exactly where the marks go missing.
+    "Use the student's notes to fix the scope and vocabulary, but draw the questions from the full standard syllabus for the topic — including the styles that recur in previous years' papers. Do not restrict yourself to facts that appear verbatim in the notes.",
+    "Write all mathematics, units and chemical formulae in LaTeX between single dollar signs, e.g. $\\frac{v^2}{r}$, $\\text{m s}^{-1}$.",
     "Respond with ONLY a JSON array — no prose, no code fences.",
   ].join(" ");
 
   const schema = `Each element must match:
 {
   "kind": "objective" | "subjective",
-  "type": "mcq" (for objective) | "short_answer" (for subjective),
+  "type": "mcq" | "numeric" (both objective) | "short_answer" (subjective),
   "difficulty": "easy" | "medium" | "hard",
   "content": string,                       // the question text
   "options": [{"label":"A","text":"..."}, ...4 for mcq only],
-  "correctAnswer": "A",                    // mcq only, matches an option label
+  "correctAnswer": "A",                    // mcq: an option label. numeric: the value alone, e.g. "12.5"
   "rubric": {"criteria": ["...", "..."]},  // short_answer only
   "explanation": string                    // concise worked explanation / model answer
 }`;
 
+  const asks = [
+    params.objective > 0
+      ? `${params.objective} objective multiple-choice question(s) with 4 options A–D`
+      : "",
+    numeric > 0
+      ? `${numeric} numerical question(s) that require working out a value (type "numeric", no options)`
+      : "",
+    params.subjective > 0
+      ? `${params.subjective} subjective short_answer question(s) with a marking rubric`
+      : "",
+  ].filter(Boolean);
+
   const prompt = [
     `Topic: ${params.topicTitle}${params.subjectPath ? ` (${params.subjectPath})` : ""}`,
+    params.examName ? `Exam: ${params.examName}` : "",
     params.reason ? `Focus/reason: ${params.reason}` : "",
-    context ? `\nStudent's notes to ground questions in:\n${context}` : "",
-    `\nGenerate ${params.objective} objective (MCQ, 4 options A–D) and ${params.subjective} subjective (short_answer with a rubric) question(s).`,
+    context ? `\nStudent's notes, for scope and vocabulary:\n${context}` : "",
+    `\nGenerate ${asks.join(", and ")}.`,
     difficultyInstruction,
     `\nSchema:\n${schema}`,
   ]
@@ -89,7 +117,7 @@ async function generateWithClaude(
   return raw
     .map((q) => normalizeQuestion(q, grounded))
     .filter((q): q is GeneratedQuestion => q !== null)
-    .slice(0, params.objective + params.subjective);
+    .slice(0, params.objective + numeric + params.subjective);
 }
 
 function normalizeQuestion(
@@ -110,6 +138,20 @@ function normalizeQuestion(
       content: q.content,
       options,
       correctAnswer: q.correctAnswer,
+      explanation: q.explanation ?? "",
+      grounded,
+    };
+  }
+  if (q.type === "numeric") {
+    const answer = String(q.correctAnswer ?? "").trim();
+    // A numerical question whose key isn't a number can't be marked.
+    if (!/^-?\d+(\.\d+)?$/.test(answer)) return null;
+    return {
+      kind: "objective",
+      type: "numeric",
+      difficulty,
+      content: q.content,
+      correctAnswer: answer,
       explanation: q.explanation ?? "",
       grounded,
     };
@@ -137,6 +179,7 @@ function fallbackQuestions(
   const grounded = notes.length > 0;
   const questions: GeneratedQuestion[] = [];
   const noteHint = notes[0]?.snippet?.split(/[.\n]/)[0]?.trim();
+  const numeric = params.numeric ?? 0;
 
   for (let i = 0; i < params.objective; i++) {
     const difficulty =
@@ -161,6 +204,22 @@ function fallbackQuestions(
       ],
       correctAnswer: "A",
       explanation: `Option A reflects the central concept of ${topicTitle}. Add a Groq API key to generate richer, notes-grounded questions.`,
+      grounded,
+    });
+  }
+
+  for (let i = 0; i < numeric; i++) {
+    const difficulty =
+      params.difficulty === "adaptive"
+        ? DIFF_CYCLE[i % DIFF_CYCLE.length]
+        : params.difficulty;
+    questions.push({
+      kind: "objective",
+      type: "numeric",
+      difficulty,
+      content: `Work out the standard numerical result for "${topicTitle}" and enter the value.`,
+      correctAnswer: String(i + 1),
+      explanation: `Add a Groq API key to generate real numerical problems for ${topicTitle}.`,
       grounded,
     });
   }

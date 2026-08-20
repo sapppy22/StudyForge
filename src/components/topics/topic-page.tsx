@@ -65,7 +65,9 @@ export function TopicPageClient({
   const [generating, setGenerating] = useState(false);
 
   const [objective, setObjective] = useState("4");
+  const [numeric, setNumeric] = useState("2");
   const [subjective, setSubjective] = useState("1");
+  const [pyq, setPyq] = useState("2");
   const [difficulty, setDifficulty] = useState("adaptive");
 
   const proficiency = Math.round(topic.proficiencyScores?.[0]?.score ?? 0);
@@ -175,7 +177,12 @@ export function TopicPageClient({
         body: JSON.stringify({
           topicId: topic.id,
           goalId: topic.goalId,
-          questionMix: { objective: Number(objective), subjective: Number(subjective) },
+          questionMix: {
+            objective: Number(objective),
+            numeric: Number(numeric),
+            subjective: Number(subjective),
+            pyq: Number(pyq),
+          },
           difficulty,
           title: `${topic.title} practice test`,
         }),
@@ -391,7 +398,9 @@ export function TopicPageClient({
           <Card>
             <CardContent className="space-y-4 py-4">
               <p className="text-sm text-muted-foreground">
-                Generate a practice test grounded in your notes.
+                Build a quiz from your notes, the standard syllabus and past
+                papers — objective, numerical and written, on the clock you set
+                in Settings.
               </p>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
@@ -401,7 +410,37 @@ export function TopicPageClient({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {["2", "3", "4", "5", "6"].map((n) => (
+                      {["0", "2", "3", "4", "5", "6", "8", "10"].map((n) => (
+                        <SelectItem key={n} value={n}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Numericals</Label>
+                  <Select value={numeric} onValueChange={(v) => setNumeric(v ?? "2")}>
+                    <SelectTrigger size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["0", "1", "2", "3", "4", "5"].map((n) => (
+                        <SelectItem key={n} value={n}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Past-paper questions</Label>
+                  <Select value={pyq} onValueChange={(v) => setPyq(v ?? "2")}>
+                    <SelectTrigger size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["0", "1", "2", "3", "4", "5"].map((n) => (
                         <SelectItem key={n} value={n}>
                           {n}
                         </SelectItem>

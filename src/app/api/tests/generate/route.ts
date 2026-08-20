@@ -10,13 +10,16 @@ const GenerateSchema = z.object({
   topicId: z.string().min(1),
   goalId: z.string().min(1),
   // Bounded because each question is a model call: an unbounded mix from the
-  // client is a way to run up a bill.
+  // client is a way to run up a bill. Past-paper questions come from the bank
+  // rather than the model, so they are cheap and bounded only by sanity.
   questionMix: z
     .object({
       objective: z.number().int().min(0).max(20),
+      numeric: z.number().int().min(0).max(10).optional(),
       subjective: z.number().int().min(0).max(10),
+      pyq: z.number().int().min(0).max(20).optional(),
     })
-    .default({ objective: 4, subjective: 1 }),
+    .default({ objective: 4, numeric: 2, subjective: 1, pyq: 2 }),
   difficulty: z.enum(Difficulty).or(z.literal("adaptive")).optional(),
   reason: z.string().max(500).optional(),
   title: z.string().min(1).max(200).default("Practice test"),

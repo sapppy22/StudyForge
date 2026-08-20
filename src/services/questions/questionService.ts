@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/db/prisma";
 import {
   Difficulty,
+  ExamType,
   Prisma,
   QuestionSource,
   QuestionType,
@@ -11,15 +13,104 @@ import { getTopicById } from "@/services/goals/goalService";
 import { retrieveNotes } from "@/services/ai/retrieval";
 import { generateQuestions } from "@/services/ai/questions";
 import { getWeakestTopics } from "@/services/analytics/proficiencyService";
+import { examEntry } from "@/data/exams/catalog";
 import { InvalidStateError, NotFoundError } from "@/lib/errors";
+
+export interface QuestionMix {
+  /** Multiple choice. */
+  objective: number;
+  /** Numerical-answer questions — the ones you have to work out. */
+  numeric?: number;
+  /** Written answers, graded against a rubric. */
+  subjective: number;
+  /** Previous-year questions pulled from the shared bank for this exam. */
+  pyq?: number;
+}
 
 export interface GenerateQuestionsInput {
   topicId: string;
   userId: string;
   goalId: string;
-  questionMix: { objective: number; subjective: number };
+  questionMix: QuestionMix;
   difficulty?: Difficulty | "adaptive";
   reason?: string;
+}
+
+const AI_TYPE_MAP: Record<string, QuestionType> = {
+  mcq: QuestionType.mcq,
+  numeric: QuestionType.numeric,
+  short_answer: QuestionType.short_answer,
+};
+
+/**
+ * Previous-year questions for this topic, from the shared bank.
+ *
+ * A quiz built purely from a student's own notes can only ever test what they
+ * already thought to write down. Real past-paper questions are the corrective:
+ * they come from the exam, not from the notes, and they are what the student
+ * will actually face.
+ *
+ * Matched on the topic's own words against the bank's chapter, topic and tag
+ * columns, then widened to the subject, then to the exam — better a relevant
+ * past paper from the same subject than none at all.
+ */
+async function pickBankQuestions(params: {
+  examType: ExamType;
+  topicTitle: string;
+  subjectTitle?: string;
+  difficulty?: Difficulty;
+  count: number;
+  excludeContent: Set<string>;
+}) {
+  if (params.count <= 0) return [];
+
+  const terms = params.topicTitle
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 3)
+    .slice(0, 6);
+
+  const difficultyFilter = params.difficulty ? { difficulty: params.difficulty } : {};
+
+  const tiers: Prisma.BankQuestionWhereInput[] = [];
+  if (terms.length > 0) {
+    tiers.push({
+      examType: params.examType,
+      ...difficultyFilter,
+      OR: terms.flatMap((term) => [
+        { chapter: { contains: term, mode: "insensitive" as const } },
+        { topic: { contains: term, mode: "insensitive" as const } },
+        { content: { contains: term, mode: "insensitive" as const } },
+        { tags: { has: term.toLowerCase() } },
+      ]),
+    });
+  }
+  if (params.subjectTitle) {
+    tiers.push({
+      examType: params.examType,
+      subject: { contains: params.subjectTitle, mode: "insensitive" },
+    });
+  }
+  tiers.push({ examType: params.examType });
+
+  const picked: Awaited<ReturnType<typeof prisma.bankQuestion.findMany>> = [];
+  const seen = new Set<string>();
+
+  for (const where of tiers) {
+    if (picked.length >= params.count) break;
+    const rows = await prisma.bankQuestion.findMany({
+      where: { ...where, correctAnswer: { not: null } },
+      orderBy: [{ year: "desc" }, { orderIndex: "asc" }],
+      take: params.count * 3,
+    });
+    for (const row of rows) {
+      if (picked.length >= params.count) break;
+      if (seen.has(row.id) || params.excludeContent.has(row.content)) continue;
+      seen.add(row.id);
+      picked.push(row);
+    }
+  }
+
+  return picked.slice(0, params.count);
 }
 
 export async function generateQuestionsForTopic(input: GenerateQuestionsInput) {
@@ -29,42 +120,87 @@ export async function generateQuestionsForTopic(input: GenerateQuestionsInput) {
   const subjectPath = [topic.parent?.title, topic.goal?.title]
     .filter(Boolean)
     .join(" · ");
+  const examType = topic.goal?.examType ?? ExamType.CUSTOM;
   const notes = await retrieveNotes(input.topicId, input.userId, topic.title, 5);
 
-  const generated = await generateQuestions({
-    topicTitle: topic.title,
-    subjectPath: subjectPath || undefined,
-    notes,
-    objective: input.questionMix.objective,
-    subjective: input.questionMix.subjective,
-    difficulty: input.difficulty ?? "adaptive",
-    reason: input.reason,
+  const mix = input.questionMix;
+  const difficulty = input.difficulty ?? "adaptive";
+
+  const [generated, bankRows] = await Promise.all([
+    generateQuestions({
+      topicTitle: topic.title,
+      subjectPath: subjectPath || undefined,
+      notes,
+      objective: mix.objective,
+      numeric: mix.numeric ?? 0,
+      subjective: mix.subjective,
+      difficulty,
+      reason: input.reason,
+      examName: examEntry(examType)?.fullName,
+    }),
+    pickBankQuestions({
+      examType,
+      topicTitle: topic.title,
+      subjectTitle: topic.parent?.title,
+      difficulty: difficulty === "adaptive" ? undefined : difficulty,
+      count: mix.pyq ?? 0,
+      excludeContent: new Set(),
+    }),
+  ]);
+
+  const rows: Prisma.QuestionCreateManyInput[] = [
+    // Past papers lead the quiz: they set the standard the generated questions
+    // are then pitched against.
+    ...bankRows.map((row) => ({
+      topicId: input.topicId,
+      goalId: input.goalId,
+      userId: input.userId,
+      type: row.type,
+      difficulty: row.difficulty,
+      content: row.content,
+      options: (row.options as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+      correctAnswer: row.correctAnswer,
+      rubric: Prisma.JsonNull,
+      explanation: row.solution,
+      source: QuestionSource.web_sourced_pyq,
+      metadata: {
+        bankSlug: row.slug,
+        chapter: row.chapter,
+        year: row.year,
+        sourceName: row.sourceName,
+        sourceUrl: row.sourceUrl,
+      } as Prisma.InputJsonValue,
+    })),
+    ...generated.map((g) => ({
+      topicId: input.topicId,
+      goalId: input.goalId,
+      userId: input.userId,
+      type: AI_TYPE_MAP[g.type] ?? QuestionType.short_answer,
+      difficulty: g.difficulty as Difficulty,
+      content: g.content,
+      options: (g.options as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+      correctAnswer: g.correctAnswer ?? null,
+      rubric: (g.rubric as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+      explanation: g.explanation ?? null,
+      source: g.grounded
+        ? QuestionSource.user_notes_grounded
+        : QuestionSource.llm_generated,
+    })),
+  ];
+
+  if (rows.length === 0) return [];
+
+  // One insert rather than one round trip per question — a 12-question quiz was
+  // twelve sequential writes.
+  const ids = rows.map(() => randomUUID());
+  await prisma.question.createMany({
+    data: rows.map((row, index) => ({ ...row, id: ids[index] })),
   });
 
-  const questions = [];
-  for (const g of generated) {
-    questions.push(
-      await prisma.question.create({
-        data: {
-          topicId: input.topicId,
-          goalId: input.goalId,
-          userId: input.userId,
-          type: g.type === "mcq" ? QuestionType.mcq : QuestionType.short_answer,
-          difficulty: g.difficulty as Difficulty,
-          content: g.content,
-          options: (g.options as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-          correctAnswer: g.correctAnswer ?? null,
-          rubric: (g.rubric as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-          explanation: g.explanation ?? null,
-          source: g.grounded
-            ? QuestionSource.user_notes_grounded
-            : QuestionSource.llm_generated,
-        },
-      })
-    );
-  }
-
-  return questions;
+  const created = await prisma.question.findMany({ where: { id: { in: ids } } });
+  // Preserve the composed order rather than whatever the database returns.
+  const byId = new Map(created.map((q) => [q.id, q]));
+  return ids.map((id) => byId.get(id)).filter((q): q is (typeof created)[number] => Boolean(q));
 }
 
 export async function createTestFromQuestions(
