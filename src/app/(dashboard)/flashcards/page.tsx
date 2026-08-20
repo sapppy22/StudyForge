@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/empty-state";
+import { MathText } from "@/components/shared/math-text";
 import { Loader2, Layers, RotateCcw, PartyPopper } from "lucide-react";
 
 interface DueCard {
@@ -179,7 +180,7 @@ export default function FlashcardsPage() {
                 flipped ? "text-xl" : "text-2xl font-semibold"
               )}
             >
-              {flipped ? card.back : card.front}
+              <MathText>{flipped ? card.back : card.front}</MathText>
             </p>
             <span className="mt-2 text-xs text-muted-foreground">
               {flipped ? "Rate how well you knew it" : "Press Space to reveal"}

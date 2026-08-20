@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { MathText } from "@/components/shared/math-text";
 import {
   Loader2,
   ArrowLeft,
@@ -175,7 +176,7 @@ export default function TestPage() {
                       <CircleDashed className="mt-0.5 size-5 shrink-0 text-amber-500" />
                     )}
                     <CardTitle className="text-base font-medium leading-snug">
-                      {i + 1}. {q.content}
+                      {i + 1}. <MathText>{q.content}</MathText>
                     </CardTitle>
                     <span className="ml-auto shrink-0 text-sm tabular-nums text-muted-foreground">
                       {a.score}/{a.maxScore}
@@ -185,17 +186,21 @@ export default function TestPage() {
                 <CardContent className="space-y-2 text-sm">
                   <p>
                     <span className="text-muted-foreground">Your answer: </span>
-                    {a.response || <span className="italic">(blank)</span>}
+                    {a.response ? (
+                      <MathText>{a.response}</MathText>
+                    ) : (
+                      <span className="italic">(blank)</span>
+                    )}
                   </p>
                   {q.type === "mcq" && q.correctAnswer && !correct && (
                     <p>
                       <span className="text-muted-foreground">Correct: </span>
-                      {q.correctAnswer}
+                      <MathText>{q.correctAnswer}</MathText>
                     </p>
                   )}
                   {a.feedback && (
                     <p className="rounded-md bg-muted px-3 py-2 text-muted-foreground">
-                      {a.feedback}
+                      <MathText>{a.feedback}</MathText>
                     </p>
                   )}
                   {q.explanation && (
@@ -203,7 +208,7 @@ export default function TestPage() {
                       <span className="font-medium text-foreground">
                         Explanation:{" "}
                       </span>
-                      {q.explanation}
+                      <MathText>{q.explanation}</MathText>
                     </p>
                   )}
                 </CardContent>
@@ -265,7 +270,7 @@ export default function TestPage() {
             <Card key={q.id}>
               <CardHeader>
                 <CardTitle className="text-base font-medium leading-snug">
-                  {index + 1}. {q.content}
+                  {index + 1}. <MathText>{q.content}</MathText>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -296,7 +301,7 @@ export default function TestPage() {
                           >
                             {opt.label}
                           </span>
-                          {opt.text}
+                          <MathText>{opt.text}</MathText>
                         </button>
                       );
                     })}

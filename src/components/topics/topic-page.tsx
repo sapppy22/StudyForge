@@ -33,6 +33,7 @@ import {
   Network,
 } from "lucide-react";
 import { MindMapPanel } from "@/components/mindmap/mind-map-panel";
+import { MathText } from "@/components/shared/math-text";
 
 export function TopicPageClient({
   topic,
@@ -352,8 +353,12 @@ export function TopicPageClient({
             {flashcards.map((card) => (
               <Card key={card.id}>
                 <CardContent className="py-4">
-                  <p className="font-medium">{card.front}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{card.back}</p>
+                  <p className="font-medium">
+                    <MathText>{card.front}</MathText>
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    <MathText>{card.back}</MathText>
+                  </p>
                 </CardContent>
               </Card>
             ))}

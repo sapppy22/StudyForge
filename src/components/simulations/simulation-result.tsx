@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { MathText } from "@/components/shared/math-text";
 import type { SimulationAttemptResult } from "@/data/simulations/types";
 import {
   CheckCircle2,
@@ -276,7 +277,9 @@ export function SimulationResult({ result, onRetake }: SimulationResultProps) {
                             {q.subject} · {q.chapter}
                           </Badge>
                         </div>
-                        <p className="text-sm font-normal leading-relaxed">{q.content}</p>
+                        <p className="text-sm font-normal leading-relaxed">
+                          <MathText>{q.content}</MathText>
+                        </p>
                       </div>
                     </div>
 
@@ -302,13 +305,17 @@ export function SimulationResult({ result, onRetake }: SimulationResultProps) {
                     <div>
                       <span className="text-muted-foreground">Your Response: </span>
                       <span className="font-semibold text-foreground">
-                        {q.userResponse ? q.userResponse : <span className="italic text-muted-foreground">Not Attempted</span>}
+                        {q.userResponse ? (
+                          <MathText>{q.userResponse}</MathText>
+                        ) : (
+                          <span className="italic text-muted-foreground">Not Attempted</span>
+                        )}
                       </span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Correct Answer: </span>
                       <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                        {q.correctAnswer}
+                        <MathText>{q.correctAnswer}</MathText>
                       </span>
                     </div>
                   </div>
@@ -318,7 +325,9 @@ export function SimulationResult({ result, onRetake }: SimulationResultProps) {
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                         <Sparkles className="size-3.5" /> Worked Solution & Step-by-Step Approach
                       </div>
-                      <p className="text-xs sm:text-sm leading-relaxed">{q.solution}</p>
+                      <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-line">
+                        <MathText>{q.solution}</MathText>
+                      </p>
                     </div>
                   )}
                 </CardContent>

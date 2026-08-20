@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDuration } from "./use-solve-timer";
+import { MathText } from "@/components/shared/math-text";
 import { Bookmark, ChevronDown, Lightbulb, Pause, Timer } from "lucide-react";
 import type { BankRow } from "./types";
 
@@ -107,7 +108,7 @@ export function QuestionRow({
                 solved && "text-muted-foreground"
               )}
             >
-              {question.content}
+              <MathText>{question.content}</MathText>
             </p>
           </button>
 
@@ -118,7 +119,7 @@ export function QuestionRow({
                   {showHint ? (
                     <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm">
                       <Lightbulb className="mr-1.5 inline size-3.5 text-chart-5" />
-                      {question.hint}
+                      <MathText>{question.hint}</MathText>
                     </p>
                   ) : (
                     <Button
@@ -152,12 +153,12 @@ export function QuestionRow({
                     {question.correctAnswer && (
                       <p className="text-sm">
                         <span className="font-medium">Answer: </span>
-                        {question.correctAnswer}
+                        <MathText>{question.correctAnswer}</MathText>
                       </p>
                     )}
                     {question.solution && (
                       <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                        {question.solution}
+                        <MathText>{question.solution}</MathText>
                       </p>
                     )}
                   </div>

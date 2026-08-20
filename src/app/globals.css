@@ -193,3 +193,25 @@
     }
   }
 }
+/* KaTeX ships its own type scale, which fights the surrounding line. Inheriting
+   the size keeps an inline equation on the same baseline as the sentence it
+   sits in, and a long display equation scrolls inside its own box rather than
+   widening the page. */
+@layer components {
+  .math-text .katex {
+    font-size: 1.05em;
+    color: inherit;
+  }
+
+  .math-text .katex-display {
+    margin: 0.35em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.2em;
+  }
+
+  /* Screen readers get the MathML copy; the HTML copy is decorative. */
+  .math-text .katex-html {
+    white-space: normal;
+  }
+}

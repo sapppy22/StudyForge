@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ProctoringGuard } from "./proctoring-guard";
+import { MathText } from "@/components/shared/math-text";
 import type {
   SimulationMock,
   SimulationAttemptResult,
@@ -479,7 +480,7 @@ export function SimulationPlayer({
 
             {/* Question Statement */}
             <div className="text-base sm:text-lg leading-relaxed text-zinc-100 font-normal py-2 font-sans">
-              {currentQuestion?.content}
+              <MathText>{currentQuestion?.content}</MathText>
             </div>
 
             {/* Options (MCQ) or Numerical Input */}
@@ -525,7 +526,9 @@ export function SimulationPlayer({
                       >
                         {opt.label}
                       </span>
-                      <span className="text-sm sm:text-base">{opt.text}</span>
+                      <span className="text-sm sm:text-base">
+                        <MathText>{opt.text}</MathText>
+                      </span>
                     </button>
                   );
                 })}
@@ -752,7 +755,9 @@ export function SimulationPlayer({
                       {q.subject} · {q.chapter}
                     </Badge>
                   </div>
-                  <p className="text-sm text-zinc-200">{q.content}</p>
+                  <p className="text-sm text-zinc-200">
+                    <MathText>{q.content}</MathText>
+                  </p>
                 </div>
               ))}
             </CardContent>
