@@ -149,6 +149,46 @@ enum StudyTaskKind {
 }
 
 /**
+ * A full-length mock paper assembled to an exam's published pattern.
+ *
+ * The curated mocks in `data/simulations/mocks.ts` are handwritten and short —
+ * useful as samples, useless as simulations, because a JEE Main mock with nine
+ * questions tells you nothing about sitting a 75-question paper for three
+ * hours. A generated paper carries the exact section layout, question count,
+ * type mix and marking scheme of the real thing.
+ *
+ * Stored rather than held in memory because grading has to happen server-side:
+ * the answer key must never travel to the client with the paper.
+ */
+model MockPaper {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+
+  examType ExamType @map("exam_type")
+  title    String
+
+  durationMinutes Int     @map("duration_minutes")
+  totalMarks      Int     @map("total_marks")
+  questionCount   Int     @map("question_count")
+  sectionalTiming Boolean @default(false) @map("sectional_timing")
+
+  /// The assembled paper: sections, instructions and questions with their keys.
+  data Json
+  /// "ai" when the model wrote the questions, "offline" for the deterministic build.
+  generatedBy String @default("ai") @map("generated_by")
+  /// How many questions came from the curated bank rather than the model.
+  curatedCount Int @default(0) @map("curated_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, examType])
+  @@map("mock_papers")
+}
+
+/**
  * Per-student exam preferences.
  *
  * Timing is the reason this table exists. A mock is only useful under the real
@@ -218,6 +258,7 @@ model Profile {
   mindMaps            MindMap[]
   studyPlans          StudyPlan[]
   settings            UserSettings?
+  mockPapers          MockPaper[]
 
   @@map("profiles")
 }

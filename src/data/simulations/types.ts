@@ -87,6 +87,13 @@ export interface SimulationMock {
   instructions: string[];
   /** Mirrors the pattern: each section runs on its own clock. */
   sectionalTiming?: boolean;
+  /**
+   * "curated" for the hand-written sample papers, "generated" for a
+   * full-length paper built to the exam's pattern for this user.
+   */
+  origin?: "curated" | "generated";
+  /** How many questions came from curated sources rather than the model. */
+  curatedCount?: number;
 }
 
 export interface ProctoringViolation {

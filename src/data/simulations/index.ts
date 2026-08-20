@@ -7,18 +7,24 @@ export * from "./types";
 export * from "./patterns";
 export * from "./mocks";
 
+const withOrigin = (sim: SimulationMock): SimulationMock => ({
+  ...sim,
+  origin: "curated",
+});
+
 export function getAllSimulations(): SimulationMock[] {
-  return CURATED_SIMULATIONS;
+  return CURATED_SIMULATIONS.map(withOrigin);
 }
 
 export function getSimulationById(idOrSlug: string): SimulationMock | undefined {
-  return CURATED_SIMULATIONS.find(
+  const found = CURATED_SIMULATIONS.find(
     (s) => s.id === idOrSlug || s.slug === idOrSlug
   );
+  return found ? withOrigin(found) : undefined;
 }
 
 export function getSimulationsForExam(examType: ExamType): SimulationMock[] {
-  return CURATED_SIMULATIONS.filter((s) => s.examType === examType);
+  return CURATED_SIMULATIONS.filter((s) => s.examType === examType).map(withOrigin);
 }
 
 export function getPatternForExam(examType: ExamType): ExamPatternConfig {
