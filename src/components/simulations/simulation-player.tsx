@@ -95,6 +95,7 @@ export function SimulationPlayer({
   const [violations, setViolations] = useState<ProctoringViolation[]>([]);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showPaperModal, setShowPaperModal] = useState(false);
 
@@ -122,6 +123,7 @@ export function SimulationPlayer({
     if (submittedRef.current) return;
     submittedRef.current = true;
     setIsSubmitting(true);
+    setSubmitError(null);
 
     const perQuestion = questionTimes();
     const elapsed = Object.values(perQuestion).reduce((sum, n) => sum + n, 0);
@@ -142,7 +144,10 @@ export function SimulationPlayer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Submission failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Your paper could not be submitted.");
+      }
       const result: SimulationAttemptResult = await res.json();
 
       if (document.fullscreenElement) {
@@ -154,6 +159,15 @@ export function SimulationPlayer({
       onComplete(result);
     } catch (err) {
       console.error("Failed to submit simulation:", err);
+      // The answers only exist in this component, so a failed submit must be
+      // visible and retryable. It used to fail to the console alone: the
+      // button went back to idle, the dialog stayed open with no explanation,
+      // and an auto-submit (time up, or three proctoring violations) failed
+      // with no sign at all that the paper had not been marked.
+      setSubmitError(
+        err instanceof Error ? err.message : "Your paper could not be submitted."
+      );
+      setShowSubmitModal(true);
       submittedRef.current = false;
       setIsSubmitting(false);
     }
@@ -894,6 +908,16 @@ export function SimulationPlayer({
                 </div>
               </div>
 
+              {submitError && (
+                <div className="flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 text-left text-xs text-rose-300">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  <span>
+                    {submitError} Your answers are still here — stay on this page and
+                    try again.
+                  </span>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -909,7 +933,7 @@ export function SimulationPlayer({
                   className="flex-1 bg-emerald-600 font-bold text-zinc-950 hover:bg-emerald-500"
                 >
                   {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-                  Confirm Submit
+                  {submitError ? "Try Again" : "Confirm Submit"}
                 </Button>
               </div>
             </CardContent>

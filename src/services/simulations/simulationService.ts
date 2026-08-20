@@ -8,10 +8,14 @@ import type {
 } from "@/data/simulations/types";
 import { getGeneratedPaper, listGeneratedPapers } from "./paperService";
 import { gradeSubjective } from "@/services/ai/grading";
-import { getPreferences } from "@/services/settings/settingsService";
+import {
+  DEFAULT_PREFERENCES,
+  getPreferences,
+  type TestPreferences,
+} from "@/services/settings/settingsService";
 import { sendExamScorecardEmail } from "@/services/email/emailService";
 import { APP_URL } from "@/lib/env";
-import { NotFoundError } from "@/lib/errors";
+import { isDatabaseUnavailable, NotFoundError } from "@/lib/errors";
 
 export interface SimulationSubmissionInput {
   simulationId: string;
@@ -31,10 +35,23 @@ export async function listAvailableSimulations(
   userId: string,
   examType?: ExamType
 ): Promise<SimulationMock[]> {
-  const [generated, curated] = await Promise.all([
-    listGeneratedPapers(userId, examType),
-    Promise.resolve(examType ? getSimulationsForExam(examType) : getAllSimulations()),
-  ]);
+  const curated = examType ? getSimulationsForExam(examType) : getAllSimulations();
+
+  // The curated papers are static data — they need nothing from the database —
+  // so a database failure must not take the whole library down with them.
+  // It used to: one rejected query answered the route with a 503, the library
+  // rendered its "no papers for this exam yet" empty state, and there was
+  // nothing left to launch even though every curated paper was sitting right
+  // there. Losing the generated papers is a degraded library; losing all of
+  // them is a broken screen.
+  let generated: SimulationMock[] = [];
+  try {
+    generated = await listGeneratedPapers(userId, examType);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    console.error("[simulations] generated papers unavailable:", error);
+  }
+
   return [...generated, ...curated];
 }
 
@@ -178,6 +195,25 @@ async function markQuestion(
   }
 }
 
+/**
+ * The preferences grading needs, with the defaults standing in when they can't
+ * be read.
+ *
+ * A curated paper is scored entirely from static data, so an unreachable
+ * database is no reason to reject a submission — and rejecting it costs the
+ * student the whole sitting, because the answers only ever existed in the
+ * browser. Marking to the default scheme is the far smaller error.
+ */
+async function preferencesForGrading(userId: string): Promise<TestPreferences> {
+  try {
+    return await getPreferences(userId);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    console.error("[simulations] grading with default preferences:", error);
+    return DEFAULT_PREFERENCES;
+  }
+}
+
 export async function gradeAndSubmitSimulation(
   input: SimulationSubmissionInput
 ): Promise<SimulationAttemptResult> {
@@ -186,7 +222,7 @@ export async function gradeAndSubmitSimulation(
     throw new NotFoundError(`Simulation with ID ${input.simulationId} not found.`);
   }
 
-  const preferences = await getPreferences(input.userId);
+  const preferences = await preferencesForGrading(input.userId);
   const negativeEnabled = preferences.negativeMarkingEnabled;
 
   const userAnswersMap = new Map(

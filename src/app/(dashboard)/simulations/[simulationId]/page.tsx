@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button";
+import { EmptyState } from "@/components/shared/empty-state";
 import { SimulationPlayer } from "@/components/simulations/simulation-player";
 import { SimulationResult } from "@/components/simulations/simulation-result";
 import {
@@ -10,7 +14,7 @@ import {
   type TestPreferences,
 } from "@/lib/test-timing";
 import type { SimulationMock, SimulationAttemptResult } from "@/data/simulations/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, TriangleAlert } from "lucide-react";
 
 export default function SimulationRunnerPage() {
   const { simulationId } = useParams() as { simulationId: string };
@@ -19,19 +23,39 @@ export default function SimulationRunnerPage() {
   const [user, setUser] = useState<{ id: string; email: string; name?: string | null } | null>(null);
   const [preferences, setPreferences] = useState<TestPreferences>(DEFAULT_PREFERENCES);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [result, setResult] = useState<SimulationAttemptResult | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadPaper() {
+      const res = await fetch(`/api/simulations/${simulationId}`);
+      if (res.ok) return res.json();
+      // 404 is the only answer that actually means "no such paper". A 401 or a
+      // 503 was being shown as one too, so a signed-out session or an
+      // unreachable database read to the student as a paper that had vanished.
+      const body = await res.json().catch(() => ({}));
+      throw new Error(
+        res.status === 404
+          ? "This simulation paper doesn't exist, or isn't yours."
+          : (body.error ?? "The paper couldn't be loaded. Try again shortly.")
+      );
+    }
+
     Promise.all([
-      fetch(`/api/simulations/${simulationId}`).then((r) => (r.ok ? r.json() : null)),
+      loadPaper(),
       fetch("/api/auth/me")
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
+      // Settings are a preference, not a prerequisite: if they can't be read
+      // the paper still runs on the board's own clock.
       fetch("/api/settings")
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     ])
       .then(([simData, userData, prefsData]) => {
+        if (cancelled) return;
         setSimulation(simData);
         if (prefsData) setPreferences(prefsData);
         // The candidate panel mimics a real CBT hall ticket, so it always needs
@@ -44,9 +68,19 @@ export default function SimulationRunnerPage() {
         });
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error("Error loading simulation:", err);
+        setLoadError(
+          err instanceof Error ? err.message : "The paper couldn't be loaded."
+        );
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [simulationId]);
 
   // The paper declares the board's duration; the student's settings decide
@@ -69,11 +103,21 @@ export default function SimulationRunnerPage() {
     );
   }
 
-  if (!simulation) {
+  if (loadError || !simulation) {
     return (
-      <div className="py-20 text-center text-muted-foreground">
-        Simulation test paper not found.
-      </div>
+      <EmptyState
+        icon={TriangleAlert}
+        title="This paper couldn't be opened"
+        description={loadError ?? "Simulation test paper not found."}
+        className="h-[60vh]"
+      >
+        <Link
+          href="/simulations"
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Back to simulations
+        </Link>
+      </EmptyState>
     );
   }
 

@@ -10,7 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { GraduationCap, PlayCircle, Loader2, Sparkles, Timer } from "lucide-react";
+import {
+  GraduationCap,
+  PlayCircle,
+  Loader2,
+  Sparkles,
+  Timer,
+  TriangleAlert,
+} from "lucide-react";
 import type { SimulationMock } from "@/data/simulations/types";
 import { EXAM_CATALOG, examLabel } from "@/data/exams/catalog";
 import { EXAM_PATTERNS } from "@/data/simulations/patterns";
@@ -28,11 +35,19 @@ export default function SimulationsPage() {
   const [activeTab, setActiveTab] = useState<ExamType | "ALL">("ALL");
   const queryClient = useQueryClient();
 
-  const { data: simulations = [], isPending: loading } = useQuery<SimulationMock[]>({
+  const {
+    data: simulations = [],
+    isPending: loading,
+    error: loadError,
+    refetch,
+  } = useQuery<SimulationMock[]>({
     queryKey: ["simulations"],
     queryFn: async () => {
       const res = await fetch("/api/simulations");
-      if (!res.ok) throw new Error("Couldn't load the simulation library");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Couldn't load the simulation library");
+      }
       return res.json();
     },
   });
@@ -124,6 +139,18 @@ export default function SimulationsPage() {
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
+      ) : loadError ? (
+        // A failed load used to fall through to the empty state below, which
+        // told the student there were no papers for their exam — the one
+        // reading of the screen that is never true, since the curated papers
+        // ship with the app.
+        <EmptyState
+          icon={TriangleAlert}
+          title="The simulation library couldn't load"
+          description={(loadError as Error).message}
+        >
+          <Button onClick={() => void refetch()}>Try again</Button>
+        </EmptyState>
       ) : filteredSimulations.length === 0 ? (
         <EmptyState
           icon={GraduationCap}
