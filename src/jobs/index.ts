@@ -90,7 +90,7 @@ export const questionGenerationJob = inngest.createFunction(
         topicId,
         userId,
         goalId,
-        questionMix: { objective: 4, subjective: 1 },
+        questionMix: { objective: 4, numeric: 2, subjective: 1, pyq: 2 },
         difficulty: "adaptive",
       });
       return { topicId, generated: questions.length };
