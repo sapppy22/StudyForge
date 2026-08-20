@@ -1,15 +1,26 @@
 import { prisma } from "@/db/prisma";
-import {
-  StudyPlanStatus,
-  StudyTaskKind,
-  TopicStatus,
-  type Prisma,
-} from "@prisma/client";
+import { StudyPlanStatus, type Prisma } from "@prisma/client";
 import {
   generatePlanNarrative,
   type PlanTopicSummary,
 } from "@/services/ai/studyplan";
+import {
+  addDays,
+  daysBetween,
+  DEFAULT_DAILY_MINUTES,
+  DEFAULT_HORIZON_DAYS,
+  MAX_HORIZON_DAYS,
+  MIN_BLOCK_MINUTES,
+  priorityFor,
+  resolveHorizon,
+  schedule,
+  startOfUtcDay,
+  type Candidate,
+} from "./scheduler";
 import { InvalidStateError, NotFoundError } from "@/lib/errors";
+
+export { startOfUtcDay } from "./scheduler";
+export type { ScheduledTask } from "./scheduler";
 
 /**
  * Adaptive study plans.
@@ -22,67 +33,8 @@ import { InvalidStateError, NotFoundError } from "@/lib/errors";
  * never rewritten under the student.
  */
 
-const DEFAULT_DAILY_MINUTES = 60;
-const DEFAULT_HORIZON_DAYS = 14;
-const MAX_HORIZON_DAYS = 60;
-/** A topic with no test history is assumed mid-weak — worth covering, not urgent. */
-const UNTESTED_WEAKNESS = 60;
-/** Mock test cadence, in days. */
-const TEST_EVERY = 7;
-
-const MINUTES_BY_KIND: Record<StudyTaskKind, number> = {
-  learn: 45,
-  practice: 30,
-  revise: 20,
-  test: 30,
-};
-
-/** Status nudges the raw weakness score: unlearned material outranks a review. */
-const STATUS_MULTIPLIER: Record<TopicStatus, number> = {
-  not_started: 1.15,
-  learning: 1.1,
-  reviewing: 0.95,
-  mastered: 0.5,
-};
-
-const KIND_BY_STATUS: Record<TopicStatus, StudyTaskKind> = {
-  not_started: StudyTaskKind.learn,
-  learning: StudyTaskKind.practice,
-  reviewing: StudyTaskKind.revise,
-  mastered: StudyTaskKind.test,
-};
-
-interface Candidate {
-  topicId: string;
-  title: string;
-  status: TopicStatus;
-  proficiency: number | null;
-  priority: number;
-}
-
 /* -------------------------------------------------------------------------- */
-/*  Dates                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/** Normalizes to UTC midnight so day grouping is stable across timezones. */
-export function startOfUtcDay(date: Date): Date {
-  return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
-  );
-}
-
-function addDays(date: Date, days: number): Date {
-  const copy = new Date(date);
-  copy.setUTCDate(copy.getUTCDate() + days);
-  return copy;
-}
-
-function daysBetween(from: Date, to: Date): number {
-  return Math.round((to.getTime() - from.getTime()) / 86_400_000);
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Prioritisation                                                             */
+/*  Candidates                                                                 */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -102,119 +54,22 @@ async function loadCandidates(
   return topics
     .map((topic) => {
       const score = topic.proficiencyScores[0]?.score ?? null;
-      const weakness = score === null ? UNTESTED_WEAKNESS : 100 - score;
-      const priority = Math.round(
-        weakness * STATUS_MULTIPLIER[topic.status] * (topic.weight || 1)
-      );
       return {
         topicId: topic.id,
         title: topic.title,
         status: topic.status,
         proficiency: score,
-        priority,
+        priority: priorityFor({
+          proficiency: score,
+          status: topic.status,
+          weight: topic.weight,
+        }),
+        orderIndex: topic.orderIndex,
       };
     })
-    .sort((a, b) => b.priority - a.priority);
-}
-
-/**
- * Expands the candidate list into a rotation where weaker topics recur more
- * often. Walking this pool round-robin gives weakness-weighted spacing without
- * needing an explicit repetition schedule.
- */
-function buildRotation(candidates: Candidate[]): Candidate[] {
-  if (candidates.length === 0) return [];
-
-  const third = Math.max(1, Math.ceil(candidates.length / 3));
-  const rotation: Candidate[] = [];
-
-  candidates.forEach((candidate, index) => {
-    const repeats = index < third ? 3 : index < third * 2 ? 2 : 1;
-    for (let i = 0; i < repeats; i += 1) rotation.push(candidate);
-  });
-
-  // Interleave so the same topic isn't scheduled on consecutive days.
-  return rotation.sort((a, b) => b.priority - a.priority).filter(Boolean);
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Scheduling                                                                 */
-/* -------------------------------------------------------------------------- */
-
-interface ScheduledTask {
-  topicId: string | null;
-  title: string;
-  kind: StudyTaskKind;
-  minutes: number;
-  scheduledFor: Date;
-  orderIndex: number;
-  priority: number;
-}
-
-function schedule(params: {
-  candidates: Candidate[];
-  startDay: Date;
-  horizonDays: number;
-  dailyMinutes: number;
-  /** Day offset of the first scheduled day, so test cadence survives a partial rewrite. */
-  dayOffset: number;
-}): ScheduledTask[] {
-  const { candidates, startDay, horizonDays, dailyMinutes, dayOffset } = params;
-  const rotation = buildRotation(candidates);
-  if (rotation.length === 0) return [];
-
-  const tasks: ScheduledTask[] = [];
-  let cursor = 0;
-
-  for (let day = 0; day < horizonDays; day += 1) {
-    const date = addDays(startDay, day);
-    const absoluteDay = day + dayOffset;
-    let remaining = dailyMinutes;
-    let orderIndex = 0;
-    const usedToday = new Set<string>();
-
-    // A weekly checkpoint keeps proficiency data fresh enough to re-prioritise on.
-    if (absoluteDay > 0 && absoluteDay % TEST_EVERY === 0) {
-      const minutes = Math.min(MINUTES_BY_KIND.test, remaining);
-      tasks.push({
-        topicId: null,
-        title: "Checkpoint test",
-        kind: StudyTaskKind.test,
-        minutes,
-        scheduledFor: date,
-        orderIndex: orderIndex++,
-        priority: 100,
-      });
-      remaining -= minutes;
-    }
-
-    // Fill the rest of the day from the rotation, never repeating a topic.
-    let guard = 0;
-    while (remaining >= 15 && guard < rotation.length * 2) {
-      const candidate = rotation[cursor % rotation.length];
-      cursor += 1;
-      guard += 1;
-
-      if (usedToday.has(candidate.topicId)) continue;
-      usedToday.add(candidate.topicId);
-
-      const kind = KIND_BY_STATUS[candidate.status];
-      const minutes = Math.min(MINUTES_BY_KIND[kind], remaining);
-
-      tasks.push({
-        topicId: candidate.topicId,
-        title: candidate.title,
-        kind,
-        minutes,
-        scheduledFor: date,
-        orderIndex: orderIndex++,
-        priority: candidate.priority,
-      });
-      remaining -= minutes;
-    }
-  }
-
-  return tasks;
+    // Ties broken by syllabus order so two runs of the same data produce the
+    // same plan — a schedule that reshuffles on every rebuild can't be trusted.
+    .sort((a, b) => b.priority - a.priority || a.orderIndex - b.orderIndex);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -241,20 +96,15 @@ export async function generateStudyPlan(input: GeneratePlanInput) {
   }
 
   const today = startOfUtcDay(new Date());
-  const dailyMinutes = goal.dailyStudyMinutes ?? DEFAULT_DAILY_MINUTES;
+  const dailyMinutes = Math.max(
+    MIN_BLOCK_MINUTES,
+    goal.dailyStudyMinutes ?? DEFAULT_DAILY_MINUTES
+  );
   const daysUntilExam = goal.examDate
     ? daysBetween(today, startOfUtcDay(goal.examDate))
     : null;
 
-  // Never plan past the exam, and never plan an unbounded horizon.
-  const horizonDays = Math.max(
-    1,
-    Math.min(
-      input.horizonDays ?? DEFAULT_HORIZON_DAYS,
-      MAX_HORIZON_DAYS,
-      daysUntilExam !== null && daysUntilExam > 0 ? daysUntilExam : MAX_HORIZON_DAYS
-    )
-  );
+  const horizonDays = resolveHorizon(input.horizonDays, daysUntilExam);
 
   const narrative = await generatePlanNarrative({
     goalTitle: goal.title,
@@ -281,6 +131,7 @@ export async function generateStudyPlan(input: GeneratePlanInput) {
     horizonDays,
     dailyMinutes,
     dayOffset: 0,
+    daysUntilExam,
   });
 
   // Replace any previous plan for this goal rather than stacking active plans.
@@ -338,12 +189,36 @@ export async function refreshPlanFromPerformance(userId: string, goalId: string)
     ? Math.max(1, daysBetween(today, startOfUtcDay(plan.endDate)) + 1)
     : DEFAULT_HORIZON_DAYS;
 
+  const goal = await prisma.goal.findUnique({
+    where: { id: goalId },
+    select: { examDate: true },
+  });
+  const daysUntilExam = goal?.examDate
+    ? daysBetween(today, startOfUtcDay(goal.examDate))
+    : null;
+
   // Completed work stays; only unfinished future blocks are reshuffled. Past
   // incomplete blocks are dropped rather than carried forward — a plan that
   // accumulates a guilt backlog stops being followed.
   await prisma.studyPlanTask.deleteMany({
     where: { planId: plan.id, completed: false, scheduledFor: { gte: today } },
   });
+
+  // Whatever the student already finished today is time they have spent. The
+  // rewrite has to budget around it, or the day is silently double-booked and
+  // every re-plan after a morning session hands them an unachievable evening.
+  const survivors = await prisma.studyPlanTask.findMany({
+    where: { planId: plan.id, scheduledFor: { gte: today } },
+    select: { scheduledFor: true, minutes: true, orderIndex: true },
+  });
+
+  const committedMinutes = new Map<string, number>();
+  const startOrderIndex = new Map<string, number>();
+  for (const task of survivors) {
+    const key = task.scheduledFor.toISOString();
+    committedMinutes.set(key, (committedMinutes.get(key) ?? 0) + task.minutes);
+    startOrderIndex.set(key, Math.max(startOrderIndex.get(key) ?? 0, task.orderIndex + 1));
+  }
 
   const tasks = schedule({
     candidates,
@@ -352,20 +227,25 @@ export async function refreshPlanFromPerformance(userId: string, goalId: string)
     dailyMinutes: plan.dailyMinutes,
     // Preserve the original test cadence across the rewrite.
     dayOffset: daysBetween(startOfUtcDay(plan.startDate), today),
+    daysUntilExam,
+    committedMinutes,
+    startOrderIndex,
   });
 
-  await prisma.studyPlanTask.createMany({
-    data: tasks.map((task) => ({
-      planId: plan.id,
-      topicId: task.topicId,
-      title: task.title,
-      kind: task.kind,
-      minutes: task.minutes,
-      scheduledFor: task.scheduledFor,
-      orderIndex: task.orderIndex,
-      priority: task.priority,
-    })),
-  });
+  if (tasks.length > 0) {
+    await prisma.studyPlanTask.createMany({
+      data: tasks.map((task) => ({
+        planId: plan.id,
+        topicId: task.topicId,
+        title: task.title,
+        kind: task.kind,
+        minutes: task.minutes,
+        scheduledFor: task.scheduledFor,
+        orderIndex: task.orderIndex,
+        priority: task.priority,
+      })),
+    });
+  }
 
   return prisma.studyPlan.update({
     where: { id: plan.id },
