@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -9,17 +9,46 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { listTemplates } from "@/lib/templates";
+import { EXAM_CATEGORY_LABELS, type ExamCategory } from "@/data/exams/catalog";
 import { cn } from "@/lib/utils";
-import { BrainCircuit, Calendar, Clock, Loader2, ArrowLeft } from "lucide-react";
+import { Calendar, Clock, Loader2, ArrowLeft, Search, Check } from "lucide-react";
 
 const templates = listTemplates();
+
+/** Catalog order, deduplicated — the picker groups by these. */
+const categories = templates.reduce<ExamCategory[]>((acc, t) => {
+  const category = t.category as ExamCategory;
+  if (!acc.includes(category)) acc.push(category);
+  return acc;
+}, []);
 
 export default function NewGoalPage() {
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [examDate, setExamDate] = useState("");
   const [dailyMinutes, setDailyMinutes] = useState<number>(60);
   const [pending, setPending] = useState(false);
+
+  const groups = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const matches = needle
+      ? templates.filter(
+          (t) =>
+            t.label.toLowerCase().includes(needle) ||
+            t.title.toLowerCase().includes(needle) ||
+            t.blurb.toLowerCase().includes(needle)
+        )
+      : templates;
+
+    return categories
+      .map((category) => ({
+        category,
+        label: EXAM_CATEGORY_LABELS[category],
+        exams: matches.filter((t) => t.category === category),
+      }))
+      .filter((group) => group.exams.length > 0);
+  }, [query]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,7 +79,7 @@ export default function NewGoalPage() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-2xl px-4 py-8">
+    <div className="mx-auto min-h-screen max-w-3xl px-4 py-8">
       <Link
         href="/dashboard"
         className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -63,42 +92,69 @@ export default function NewGoalPage() {
           <CardTitle className="text-2xl">Set up your goal</CardTitle>
           <CardDescription>
             Pick an exam and schedule — we&apos;ll build your syllabus tree
-            automatically.
+            automatically and shape every mock to that exam&apos;s real paper.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-3">
-              <Label>What are you preparing for?</Label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {templates.map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => setSelected(t.key)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border p-4 text-left transition-colors hover:bg-muted",
-                      selected === t.key &&
-                        "border-primary bg-primary/5 ring-1 ring-primary"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex size-10 items-center justify-center rounded-lg",
-                        selected === t.key
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      <BrainCircuit className="size-5" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{t.title}</p>
-                      <p className="text-xs text-muted-foreground">{t.examType}</p>
-                    </div>
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>What are you preparing for?</Label>
+                <div className="relative w-56">
+                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search exams…"
+                    className="pl-8"
+                    aria-label="Search exams"
+                  />
+                </div>
               </div>
+
+              {groups.length === 0 ? (
+                <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                  No exam matches “{query}”.
+                </p>
+              ) : (
+                <div className="space-y-5">
+                  {groups.map((group) => (
+                    <div key={group.category} className="space-y-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {group.label}
+                      </h3>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {group.exams.map((t) => {
+                          const isSelected = selected === t.key;
+                          return (
+                            <button
+                              key={t.key}
+                              type="button"
+                              onClick={() => setSelected(t.key)}
+                              aria-pressed={isSelected}
+                              className={cn(
+                                "rounded-lg border p-3 text-left transition-colors hover:bg-muted",
+                                isSelected && "border-primary bg-primary/5 ring-1 ring-primary"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-medium">{t.label}</p>
+                                {isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                              </div>
+                              <p className="mt-0.5 text-xs text-muted-foreground">{t.blurb}</p>
+                              {t.topicCount > 0 && (
+                                <p className="mt-1 text-[11px] text-muted-foreground/80">
+                                  {t.topicCount} topics ready to schedule
+                                </p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

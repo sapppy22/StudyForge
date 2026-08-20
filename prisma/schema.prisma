@@ -16,10 +16,22 @@ enum ExamType {
   JEE_MAIN
   JEE_ADVANCED
   NEET
+  BITSAT
+  CUET_UG
+  GATE
+  NDA
   SSC_CGL
   SSC_CHSL
+  IBPS_PO
+  RRB_NTPC
+  CTET
   UPSC
+  CLAT
   CAT
+  GRE
+  GMAT
+  IELTS
+  TOEFL
   CUSTOM
 }
 

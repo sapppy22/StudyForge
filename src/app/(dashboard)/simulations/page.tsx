@@ -14,14 +14,16 @@ import {
   Loader2,
 } from "lucide-react";
 import type { SimulationMock } from "@/data/simulations/types";
+import { EXAM_CATALOG, examLabel } from "@/data/exams/catalog";
 import { ExamType } from "@prisma/client";
 
+// Driven off the catalog so a newly supported exam shows up here without a
+// second edit. CUSTOM has no published pattern to mock, so it is left out.
 const EXAM_TABS: { label: string; value: ExamType | "ALL" }[] = [
-  { label: "All Exams", value: "ALL" },
-  { label: "JEE Main", value: ExamType.JEE_MAIN },
-  { label: "NEET", value: ExamType.NEET },
-  { label: "SSC CGL", value: ExamType.SSC_CGL },
-  { label: "JEE Advanced", value: ExamType.JEE_ADVANCED },
+  { label: "All exams", value: "ALL" },
+  ...EXAM_CATALOG.filter((entry) => entry.examType !== ExamType.CUSTOM).map(
+    (entry) => ({ label: entry.label, value: entry.examType })
+  ),
 ];
 
 export default function SimulationsPage() {
@@ -48,11 +50,11 @@ export default function SimulationsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Real Exam Simulations"
-        description="Authentic CBT computer-based test simulations modeled after official NTA, NEET, and SSC examination environments with full proctoring."
+        description="Full-length computer-based mocks built to each board's published pattern — the same question count, marking scheme and clock as the real paper, with proctoring on."
       />
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
+      <div className="flex flex-wrap items-center gap-2 overflow-x-auto border-b border-border pb-3">
         {EXAM_TABS.map((tab) => (
           <button
             key={tab.value}
@@ -87,7 +89,7 @@ export default function SimulationsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500 bg-emerald-500/10">
-                      {sim.examType.replace("_", " ")} CBT
+                      {examLabel(sim.examType)} CBT
                     </Badge>
                     <CardTitle className="text-base font-bold leading-snug">
                       {sim.title}
