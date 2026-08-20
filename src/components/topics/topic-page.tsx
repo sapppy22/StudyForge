@@ -33,6 +33,7 @@ import {
   Network,
 } from "lucide-react";
 import { MindMapPanel } from "@/components/mindmap/mind-map-panel";
+import { SuggestedResources } from "@/components/plan/suggested-resources";
 import { MathText } from "@/components/shared/math-text";
 
 export function TopicPageClient({
@@ -72,7 +73,11 @@ export function TopicPageClient({
 
   const proficiency = Math.round(topic.proficiencyScores?.[0]?.score ?? 0);
   const notes = content.filter((c) => c.type === "note");
-  const videos = content.filter((c) => c.type === "video");
+  // Saved suggestions land as `video` or `web_article`; both belong on this
+  // tab, or an article the student saved would simply vanish.
+  const videos = content.filter(
+    (c) => c.type === "video" || c.type === "web_article"
+  );
 
   async function refetchContent() {
     const c = await fetch(`/api/content?topicId=${topic.id}`).then((r) => r.json());
@@ -249,7 +254,7 @@ export function TopicPageClient({
             <FileText className="size-4" /> Notes
           </TabsTrigger>
           <TabsTrigger value="videos">
-            <Play className="size-4" /> Videos
+            <Play className="size-4" /> Material
           </TabsTrigger>
           <TabsTrigger value="mindmap">
             <Network className="size-4" /> Memory map
@@ -303,11 +308,26 @@ export function TopicPageClient({
 
         {/* Videos */}
         <TabsContent value="videos" className="space-y-4 pt-4">
+          <Card>
+            <CardContent className="py-4">
+              <p className="mb-2 text-sm text-muted-foreground">
+                Material worth spending this topic&apos;s study blocks on. Save
+                one and it joins your own list below.
+              </p>
+              <SuggestedResources topicId={topic.id} intent="learn" />
+            </CardContent>
+          </Card>
+
           {videos.map((item) => (
             <Card key={item.id}>
               <CardContent className="py-4">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <Play className="size-4 text-muted-foreground" /> {item.title}
+                  {item.type === "web_article" ? (
+                    <FileText className="size-4 text-muted-foreground" />
+                  ) : (
+                    <Play className="size-4 text-muted-foreground" />
+                  )}
+                  {item.title}
                 </div>
                 <a
                   href={item.sourceUrl}

@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/shared/empty-state";
+import { SuggestedResources } from "./suggested-resources";
 import {
   BookOpen,
   CalendarDays,
@@ -325,6 +326,13 @@ export function StudyPlanView({ goals }: { goals: Goal[] }) {
                             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                               {task.description}
                             </p>
+                          )}
+                          {task.topic && (
+                            <SuggestedResources
+                              topicId={task.topic.id}
+                              intent={task.kind}
+                              className="mt-2"
+                            />
                           )}
                         </div>
                       </div>
